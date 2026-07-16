@@ -1,5 +1,8 @@
 package untitled.untitled.client;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
@@ -21,6 +24,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -51,7 +55,6 @@ public final class PartyHud {
     private static final int MUTED = 0xFF8A8A8A;
     private static final int SEPARATOR_COLOR = 0x35FFFFFF;
     private static final int SNEAK_COLOR = 0xFF7FE4FF;
-
     private static final int ARROW_COLOR = 0xFFFFFFFF;
     private static final int ARROW_COLOR_MUTED = 0x90AAAAAA;
 
@@ -76,13 +79,32 @@ public final class PartyHud {
 
     private static final Map<UUID, LastSeen> LAST_SEEN = new HashMap<>();
     private static final List<Row> EDITOR_ROWS = List.of(
-            Row.preview(UUID.nameUUIDFromBytes("party-editor-one".getBytes()), "PartyOne", Targeting.Affinity.TEAM,
-                    18.0, 2.0, 18.5, -35.0, false, 12),
-            Row.preview(UUID.nameUUIDFromBytes("party-editor-two".getBytes()), "PartyTwo", Targeting.Affinity.ENEMY,
-                    31.0, -4.0, 7.5, 48.0, true, 8)
+            Row.preview(
+                    UUID.nameUUIDFromBytes("party-editor-one".getBytes(StandardCharsets.UTF_8)),
+                    "PartyOne",
+                    Targeting.Affinity.TEAM,
+                    18.0,
+                    2.0,
+                    18.5,
+                    -35.0,
+                    false,
+                    12
+            ),
+            Row.preview(
+                    UUID.nameUUIDFromBytes("party-editor-two".getBytes(StandardCharsets.UTF_8)),
+                    "PartyTwo",
+                    Targeting.Affinity.ENEMY,
+                    31.0,
+                    -4.0,
+                    7.5,
+                    48.0,
+                    true,
+                    8
+            )
     );
 
     private static boolean initialized = false;
+    private static boolean loadingSettings = false;
     private static ViewMode viewMode = ViewMode.COMPACT;
     private static long lastCleanupMs = 0L;
     private static int offsetX = 0;
@@ -104,10 +126,12 @@ public final class PartyHud {
 
     public static void setModeDetail() {
         viewMode = ViewMode.DETAIL;
+        saveSettings();
     }
 
     public static void setModeCompact() {
         viewMode = ViewMode.COMPACT;
+        saveSettings();
     }
 
     public static ViewMode getMode() {
@@ -148,9 +172,92 @@ public final class PartyHud {
         }
     }
 
+    static void writeSettings(JsonObject root) {
+        root.addProperty("partyViewMode", viewMode.name());
+        root.addProperty("partySortMode", Targeting.getSortMode().name());
+
+        JsonArray targets = new JsonArray();
+        for (Targeting.TargetInfo target : Targeting.all()) {
+            JsonObject item = new JsonObject();
+            item.addProperty("uuid", target.uuid.toString());
+            item.addProperty("name", target.name);
+            item.addProperty("affinity", target.affinity.name());
+            targets.add(item);
+        }
+        root.add("partyTargets", targets);
+    }
+
+    static void readSettings(JsonObject root) {
+        loadingSettings = true;
+        try {
+            if (root.has("partyViewMode")) {
+                try {
+                    viewMode = ViewMode.valueOf(root.get("partyViewMode").getAsString());
+                } catch (IllegalArgumentException ignored) {
+                    viewMode = ViewMode.COMPACT;
+                }
+            }
+
+            if (root.has("partySortMode")) {
+                try {
+                    Targeting.sortMode = Targeting.SortMode.valueOf(
+                            root.get("partySortMode").getAsString()
+                    );
+                } catch (IllegalArgumentException ignored) {
+                    Targeting.sortMode = Targeting.SortMode.ORDER;
+                }
+            }
+
+            Targeting.TARGETS.clear();
+            if (root.has("partyTargets") && root.get("partyTargets").isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray("partyTargets")) {
+                    if (!element.isJsonObject() || Targeting.TARGETS.size() >= Targeting.MAXIMUM_TARGETS) {
+                        continue;
+                    }
+
+                    JsonObject item = element.getAsJsonObject();
+                    if (!item.has("uuid") || !item.has("name")) {
+                        continue;
+                    }
+
+                    try {
+                        UUID uuid = UUID.fromString(item.get("uuid").getAsString());
+                        String name = item.get("name").getAsString();
+                        Targeting.Affinity affinity = Targeting.Affinity.NEUTRAL;
+
+                        if (item.has("affinity")) {
+                            try {
+                                affinity = Targeting.Affinity.valueOf(
+                                        item.get("affinity").getAsString()
+                                );
+                            } catch (IllegalArgumentException ignored) {
+                            }
+                        }
+
+                        if (!name.isBlank()) {
+                            Targeting.TARGETS.put(
+                                    uuid,
+                                    new Targeting.TargetInfo(uuid, name, affinity)
+                            );
+                        }
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+        } finally {
+            loadingSettings = false;
+        }
+    }
+
+    private static void saveSettings() {
+        if (!loadingSettings) {
+            EditHud.saveSettings();
+        }
+    }
+
     private static void registerCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("target")
+                dispatcher.register(literal("party")
                         .then(argument("player", StringArgumentType.word())
                                 .suggests((context, builder) -> suggestPlayersForAdd(builder))
                                 .then(argument("role", StringArgumentType.word())
@@ -169,10 +276,9 @@ public final class PartyHud {
                                                     : Targeting.Affinity.NEUTRAL;
                                             return resultCode(Targeting.addOrEnsureByName(name, affinity));
                                         }))
-                                .executes(context -> {
-                                    String name = StringArgumentType.getString(context, "player");
-                                    return resultCode(Targeting.addOrEnsureByName(name));
-                                }))
+                                .executes(context -> resultCode(Targeting.addOrEnsureByName(
+                                        StringArgumentType.getString(context, "player")
+                                ))))
                         .then(literal("remove")
                                 .then(argument("player", StringArgumentType.word())
                                         .suggests((context, builder) -> suggestPlayersForRemove(builder))
@@ -520,17 +626,27 @@ public final class PartyHud {
             if (viewMode == ViewMode.DETAIL) {
                 String armor = row.armorText();
                 int armorTextWidth = font.getWidth(armor);
-                drawColoredText(context, font, armor,
-                        armorColumn + Math.max(0, armorWidth - armorTextWidth), textY,
-                        unloaded ? MUTED : ARMOR_COLOR);
+                drawColoredText(
+                        context,
+                        font,
+                        armor,
+                        armorColumn + Math.max(0, armorWidth - armorTextWidth),
+                        textY,
+                        unloaded ? MUTED : ARMOR_COLOR
+                );
             }
 
             drawHead(context, getSkinIdFor(row.uuid), headColumn, textY, iconWidth, iconHeight);
             drawColoredText(context, font, row.name, nameColumn, textY, nameColor);
             drawSneakSuffix(context, font, row, nameColumn, textY);
-            drawColoredText(context, font,
+            drawColoredText(
+                    context,
+                    font,
                     viewMode == ViewMode.COMPACT ? row.distanceCompact() : row.distanceDetail(),
-                    distanceColumn, textY, distanceColor);
+                    distanceColumn,
+                    textY,
+                    distanceColor
+            );
 
             if (viewMode == ViewMode.DETAIL) {
                 drawColoredText(context, font, row.deltaYText(), deltaYColumn, textY, deltaColor);
@@ -541,19 +657,35 @@ public final class PartyHud {
             int arrowY = textY + (lineHeight - arrowBox) / 2;
             boolean self = client.player != null && row.uuid.equals(client.player.getUuid());
             if (row.stale || self) {
-                drawDash(context, font, arrowColumn, arrowY, arrowBox, unloaded ? MUTED : DIST_COLOR);
+                drawDash(
+                        context,
+                        font,
+                        arrowColumn,
+                        arrowY,
+                        arrowBox,
+                        unloaded ? MUTED : DIST_COLOR
+                );
             } else {
                 NeonArrow.drawRotated(
-                        context, arrowColumn, arrowY, arrowBox, arrowBox,
-                        row.angleDegrees, unloaded ? ARROW_COLOR_MUTED : ARROW_COLOR
+                        context,
+                        arrowColumn,
+                        arrowY,
+                        arrowBox,
+                        arrowBox,
+                        row.angleDegrees,
+                        unloaded ? ARROW_COLOR_MUTED : ARROW_COLOR
                 );
             }
 
             if (index < rows.size() - 1) {
                 int separatorY = rawY + lineHeight + rowGap / 2;
-                context.fill(headColumn, separatorY,
+                context.fill(
+                        headColumn,
+                        separatorY,
                         Math.max(arrowColumn + arrowBox, headColumn + contentWidth),
-                        separatorY + 1, SEPARATOR_COLOR);
+                        separatorY + 1,
+                        SEPARATOR_COLOR
+                );
             }
         }
 
@@ -613,20 +745,32 @@ public final class PartyHud {
             return lerpColor(HP_RED, HP_YELLOW, (float) ((health - 6.0) / 7.0));
         }
         if (health < 21.0) {
-            return lerpColor(HP_YELLOW, HP_LIGHT_GREEN, (float) ((health - 13.0) / 8.0));
+            return lerpColor(
+                    HP_YELLOW,
+                    HP_LIGHT_GREEN,
+                    (float) ((health - 13.0) / 8.0)
+            );
         }
         return HP_DARK_GREEN;
     }
 
     private static int lerpColor(int first, int second, float progress) {
         progress = Math.max(0.0F, Math.min(1.0F, progress));
-        int alpha = Math.round(((first >>> 24) & 0xFF)
-                + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * progress);
-        int red = Math.round(((first >>> 16) & 0xFF)
-                + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * progress);
-        int green = Math.round(((first >>> 8) & 0xFF)
-                + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * progress);
-        int blue = Math.round((first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * progress);
+        int alpha = Math.round(
+                ((first >>> 24) & 0xFF)
+                        + (((second >>> 24) & 0xFF) - ((first >>> 24) & 0xFF)) * progress
+        );
+        int red = Math.round(
+                ((first >>> 16) & 0xFF)
+                        + (((second >>> 16) & 0xFF) - ((first >>> 16) & 0xFF)) * progress
+        );
+        int green = Math.round(
+                ((first >>> 8) & 0xFF)
+                        + (((second >>> 8) & 0xFF) - ((first >>> 8) & 0xFF)) * progress
+        );
+        int blue = Math.round(
+                (first & 0xFF) + ((second & 0xFF) - (first & 0xFF)) * progress
+        );
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
@@ -688,7 +832,8 @@ public final class PartyHud {
     private static Identifier fallbackSkin(UUID uuid) {
         try {
             try {
-                java.lang.reflect.Method method = DefaultSkinHelper.class.getMethod("getTexture", UUID.class);
+                java.lang.reflect.Method method =
+                        DefaultSkinHelper.class.getMethod("getTexture", UUID.class);
                 return (Identifier) method.invoke(null, uuid);
             } catch (NoSuchMethodException ignored) {
                 return DefaultSkinHelper.getTexture();
@@ -712,18 +857,26 @@ public final class PartyHud {
         context.drawTexture(
                 RenderLayer::getGuiTextured,
                 skin,
-                x, y,
-                8.0F, 8.0F,
-                width, height,
-                64, 64
+                x,
+                y,
+                8.0F,
+                8.0F,
+                width,
+                height,
+                64,
+                64
         );
         context.drawTexture(
                 RenderLayer::getGuiTextured,
                 skin,
-                x, y,
-                40.0F, 8.0F,
-                width, height,
-                64, 64
+                x,
+                y,
+                40.0F,
+                8.0F,
+                width,
+                height,
+                64,
+                64
         );
     }
 
@@ -772,7 +925,14 @@ public final class PartyHud {
         Identifier skinId;
         boolean sneaking;
 
-        LastSeen(double x, double y, double z, long timeMs, Identifier skinId, boolean sneaking) {
+        LastSeen(
+                double x,
+                double y,
+                double z,
+                long timeMs,
+                Identifier skinId,
+                boolean sneaking
+        ) {
             this.x = x;
             this.y = y;
             this.z = z;
@@ -836,9 +996,18 @@ public final class PartyHud {
                 int armor
         ) {
             return new Row(
-                    uuid, name, affinity, false, false,
-                    distance, deltaY, health, angleDegrees,
-                    sneaking, false, armor
+                    uuid,
+                    name,
+                    affinity,
+                    false,
+                    false,
+                    distance,
+                    deltaY,
+                    health,
+                    angleDegrees,
+                    sneaking,
+                    false,
+                    armor
             );
         }
 
@@ -856,9 +1025,18 @@ public final class PartyHud {
                 int armor
         ) {
             return new Row(
-                    uuid, name, affinity, true, stale,
-                    distance, deltaY, health, angleDegrees,
-                    sneaking, sneakGhost, armor
+                    uuid,
+                    name,
+                    affinity,
+                    true,
+                    stale,
+                    distance,
+                    deltaY,
+                    health,
+                    angleDegrees,
+                    sneaking,
+                    sneakGhost,
+                    armor
             );
         }
 
@@ -873,7 +1051,17 @@ public final class PartyHud {
                 boolean sneaking,
                 int armor
         ) {
-            return live(uuid, name, affinity, distance, deltaY, health, angleDegrees, sneaking, armor);
+            return live(
+                    uuid,
+                    name,
+                    affinity,
+                    distance,
+                    deltaY,
+                    health,
+                    angleDegrees,
+                    sneaking,
+                    armor
+            );
         }
 
         boolean isUnloaded() {
@@ -881,11 +1069,15 @@ public final class PartyHud {
         }
 
         String distanceDetail() {
-            return Double.isNaN(distance) ? "—" : String.format(Locale.ROOT, "%.1f", distance);
+            return Double.isNaN(distance)
+                    ? "—"
+                    : String.format(Locale.ROOT, "%.1f", distance);
         }
 
         String distanceCompact() {
-            return Double.isNaN(distance) ? "—" : Long.toString(Math.round(distance));
+            return Double.isNaN(distance)
+                    ? "—"
+                    : Long.toString(Math.round(distance));
         }
 
         String deltaYText() {
@@ -932,7 +1124,8 @@ public final class PartyHud {
             ENEMY
         }
 
-        private static final LinkedHashMap<UUID, TargetInfo> TARGETS = new LinkedHashMap<>();
+        private static final LinkedHashMap<UUID, TargetInfo> TARGETS =
+                new LinkedHashMap<>();
         private static final int MAXIMUM_TARGETS = 7;
         private static SortMode sortMode = SortMode.ORDER;
 
@@ -957,6 +1150,7 @@ public final class PartyHud {
             for (TargetInfo target : TARGETS.values()) {
                 if (target.name.equalsIgnoreCase(needle)) {
                     target.affinity = affinity == null ? Affinity.NEUTRAL : affinity;
+                    saveSettings();
                     return AddResult.EXISTS;
                 }
             }
@@ -965,11 +1159,19 @@ public final class PartyHud {
             String foundName = null;
 
             for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
+                if (entry.getProfile() == null) {
+                    continue;
+                }
+
                 String profileName = entry.getProfile().getName();
-                String profileLower = profileName == null ? "" : profileName.toLowerCase(Locale.ROOT);
+                String profileLower = profileName == null
+                        ? ""
+                        : profileName.toLowerCase(Locale.ROOT);
                 String displayLower = entry.getDisplayName() == null
                         ? ""
-                        : sanitizeNameForMatching(entry.getDisplayName().getString()).toLowerCase(Locale.ROOT);
+                        : sanitizeNameForMatching(
+                                entry.getDisplayName().getString()
+                        ).toLowerCase(Locale.ROOT);
 
                 if (profileLower.equals(needle) || displayLower.equals(needle)) {
                     foundUuid = entry.getProfile().getId();
@@ -980,11 +1182,19 @@ public final class PartyHud {
 
             if (foundUuid == null) {
                 for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
+                    if (entry.getProfile() == null) {
+                        continue;
+                    }
+
                     String profileName = entry.getProfile().getName();
-                    String profileLower = profileName == null ? "" : profileName.toLowerCase(Locale.ROOT);
+                    String profileLower = profileName == null
+                            ? ""
+                            : profileName.toLowerCase(Locale.ROOT);
                     String displayLower = entry.getDisplayName() == null
                             ? ""
-                            : sanitizeNameForMatching(entry.getDisplayName().getString()).toLowerCase(Locale.ROOT);
+                            : sanitizeNameForMatching(
+                                    entry.getDisplayName().getString()
+                            ).toLowerCase(Locale.ROOT);
 
                     if (profileLower.contains(needle) || displayLower.contains(needle)) {
                         foundUuid = entry.getProfile().getId();
@@ -1001,11 +1211,15 @@ public final class PartyHud {
                 return AddResult.FULL;
             }
 
-            TARGETS.put(foundUuid, new TargetInfo(
+            TARGETS.put(
                     foundUuid,
-                    foundName == null ? needle : foundName,
-                    affinity == null ? Affinity.NEUTRAL : affinity
-            ));
+                    new TargetInfo(
+                            foundUuid,
+                            foundName == null ? needle : foundName,
+                            affinity == null ? Affinity.NEUTRAL : affinity
+                    )
+            );
+            saveSettings();
             return AddResult.ADDED;
         }
 
@@ -1029,24 +1243,29 @@ public final class PartyHud {
 
             TARGETS.remove(match);
             forget(match);
+            saveSettings();
             return true;
         }
 
         public static void clearAll() {
             TARGETS.clear();
             forgetAll();
+            saveSettings();
         }
 
         public static void setSortModeOrder() {
             sortMode = SortMode.ORDER;
+            saveSettings();
         }
 
         public static void setSortModeDistance() {
             sortMode = SortMode.DISTANCE;
+            saveSettings();
         }
 
         public static void setSortModeHealth() {
             sortMode = SortMode.HEALTH;
+            saveSettings();
         }
 
         public static SortMode getSortMode() {
@@ -1088,7 +1307,9 @@ public final class PartyHud {
             var matrices = context.getMatrices();
             matrices.push();
             matrices.translate(centerX, centerY, 0.0F);
-            matrices.multiply(RotationAxis.POSITIVE_Z.rotationDegrees((float) (angleDegrees - 90.0)));
+            matrices.multiply(
+                    RotationAxis.POSITIVE_Z.rotationDegrees((float) (angleDegrees - 90.0))
+            );
             matrices.translate(-width / 2.0F, -height / 2.0F, 0.0F);
 
             int coreThickness = Math.max(1, width / 12);
@@ -1103,10 +1324,42 @@ public final class PartyHud {
             int secondX1 = Math.round(width * 0.25F);
             int secondY1 = Math.round(height * 0.70F);
 
-            drawLineThick(context, firstX1, firstY1, tipX, tipY, outlineThickness, outlineColor);
-            drawLineThick(context, secondX1, secondY1, tipX, tipY, outlineThickness, outlineColor);
-            drawLineThick(context, firstX1, firstY1, tipX, tipY, coreThickness, coreColor);
-            drawLineThick(context, secondX1, secondY1, tipX, tipY, coreThickness, coreColor);
+            drawLineThick(
+                    context,
+                    firstX1,
+                    firstY1,
+                    tipX,
+                    tipY,
+                    outlineThickness,
+                    outlineColor
+            );
+            drawLineThick(
+                    context,
+                    secondX1,
+                    secondY1,
+                    tipX,
+                    tipY,
+                    outlineThickness,
+                    outlineColor
+            );
+            drawLineThick(
+                    context,
+                    firstX1,
+                    firstY1,
+                    tipX,
+                    tipY,
+                    coreThickness,
+                    coreColor
+            );
+            drawLineThick(
+                    context,
+                    secondX1,
+                    secondY1,
+                    tipX,
+                    tipY,
+                    coreThickness,
+                    coreColor
+            );
             matrices.pop();
         }
 
@@ -1129,10 +1382,17 @@ public final class PartyHud {
             int y = y1;
 
             while (true) {
-                context.fill(x - radius, y - radius, x + radius + 1, y + radius + 1, argb);
+                context.fill(
+                        x - radius,
+                        y - radius,
+                        x + radius + 1,
+                        y + radius + 1,
+                        argb
+                );
                 if (x == x2 && y == y2) {
                     break;
                 }
+
                 int doubled = 2 * error;
                 if (doubled > -dy) {
                     error -= dy;
