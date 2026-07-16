@@ -5,7 +5,7 @@ import net.fabricmc.api.ClientModInitializer;
 public class UntitledClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
-        EditHud.init();
+        EditHud.register();
         ContentTimer.init();
         PartyHud.init();
     }
