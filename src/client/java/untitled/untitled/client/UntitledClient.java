@@ -8,5 +8,6 @@ public class UntitledClient implements ClientModInitializer {
         EditHud.register();
         ContentTimer.init();
         PartyHud.init();
+        CameraControl.init();
     }
 }
