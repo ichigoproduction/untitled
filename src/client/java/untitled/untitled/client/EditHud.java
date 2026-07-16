@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -42,6 +43,8 @@ public final class EditHud extends Screen {
             .resolve("untitled_hud.json");
 
     private static boolean initialized = false;
+    private static int openEditorDelayTicks = -1;
+
     private DragTarget dragTarget = DragTarget.NONE;
 
     private EditHud() {
@@ -54,22 +57,38 @@ public final class EditHud extends Screen {
         }
         initialized = true;
 
-        loadPositions();
+        loadSettings();
+
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(literal("hud")
                         .executes(context -> {
-                            MinecraftClient client = MinecraftClient.getInstance();
-                            client.execute(() -> client.setScreen(new EditHud()));
+                            openEditorDelayTicks = 2;
                             return 1;
                         })
                         .then(literal("reset").executes(context -> {
                             ContentTimer.resetPosition();
                             PartyHud.resetPosition();
-                            savePositions();
+                            saveSettings();
                             return 1;
                         }))
                 )
         );
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (openEditorDelayTicks < 0) {
+                return;
+            }
+
+            if (openEditorDelayTicks > 0) {
+                openEditorDelayTicks--;
+                return;
+            }
+
+            openEditorDelayTicks = -1;
+            if (!(client.currentScreen instanceof EditHud)) {
+                client.setScreen(new EditHud());
+            }
+        });
     }
 
     @Override
@@ -194,7 +213,7 @@ public final class EditHud extends Screen {
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0 && dragTarget != DragTarget.NONE) {
             dragTarget = DragTarget.NONE;
-            savePositions();
+            saveSettings();
             return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);
@@ -202,7 +221,7 @@ public final class EditHud extends Screen {
 
     @Override
     public void close() {
-        savePositions();
+        saveSettings();
         super.close();
     }
 
@@ -211,7 +230,7 @@ public final class EditHud extends Screen {
         return false;
     }
 
-    private static void loadPositions() {
+    private static void loadSettings() {
         if (!Files.isRegularFile(CONFIG_PATH)) {
             return;
         }
@@ -237,18 +256,21 @@ public final class EditHud extends Screen {
 
             ContentTimer.setOffsets(contentX, contentY);
             PartyHud.setOffsets(partyX, partyY);
+            PartyHud.readSettings(root);
         } catch (Exception ignored) {
         }
     }
 
-    static void savePositions() {
+    static void saveSettings() {
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
+
             JsonObject root = new JsonObject();
             root.addProperty("contentOffsetX", ContentTimer.getOffsetX());
             root.addProperty("contentOffsetY", ContentTimer.getOffsetY());
             root.addProperty("partyOffsetX", PartyHud.getOffsetX());
             root.addProperty("partyOffsetY", PartyHud.getOffsetY());
+            PartyHud.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
                     CONFIG_PATH,
