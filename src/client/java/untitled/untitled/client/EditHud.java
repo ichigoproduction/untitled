@@ -48,7 +48,7 @@ public final class EditHud extends Screen {
         super(Text.literal("HUD Editor"));
     }
 
-    public static void init() {
+    public static void register() {
         if (initialized) {
             return;
         }
