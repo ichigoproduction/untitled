@@ -6,10 +6,8 @@ import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
 import java.io.IOException;
@@ -49,7 +47,7 @@ public final class EditHud extends Screen {
     private DragTarget dragTarget = DragTarget.NONE;
 
     private EditHud() {
-        super(Text.literal("HUD Editor"));
+        super(Text.empty());
     }
 
     public static void register() {
@@ -94,14 +92,6 @@ public final class EditHud extends Screen {
     }
 
     @Override
-    protected void init() {
-        int buttonWidth = 100;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Done"), button -> close())
-                .dimensions((width - buttonWidth) / 2, height - 28, buttonWidth, 20)
-                .build());
-    }
-
-    @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0x88000000);
 
@@ -116,42 +106,17 @@ public final class EditHud extends Screen {
         drawSelectionBox(
                 context,
                 contentBounds,
-                dragTarget == DragTarget.CONTENT || contentBounds.contains(mouseX, mouseY),
-                "Power HUD"
+                dragTarget == DragTarget.CONTENT || contentBounds.contains(mouseX, mouseY)
         );
         drawSelectionBox(
                 context,
                 partyBounds,
-                dragTarget == DragTarget.PARTY || partyBounds.contains(mouseX, mouseY),
-                "Party HUD"
+                dragTarget == DragTarget.PARTY || partyBounds.contains(mouseX, mouseY)
         );
         drawSelectionBox(
                 context,
                 foodStackBounds,
-                dragTarget == DragTarget.FOOD_STACK || foodStackBounds.contains(mouseX, mouseY),
-                "FoodStack HUD"
-        );
-
-        context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.literal("HUD Editor"),
-                width / 2,
-                12,
-                0xFFFFFF
-        );
-        context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.literal("Drag a HUD with the left mouse button · ESC or Done to save"),
-                width / 2,
-                26,
-                0xBFC7D5
-        );
-        context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.literal("/hud reset restores all default positions"),
-                width / 2,
-                38,
-                0x8F9AAA
+                dragTarget == DragTarget.FOOD_STACK || foodStackBounds.contains(mouseX, mouseY)
         );
 
         super.render(context, mouseX, mouseY, delta);
@@ -160,8 +125,7 @@ public final class EditHud extends Screen {
     private void drawSelectionBox(
             DrawContext context,
             HudBounds bounds,
-            boolean active,
-            String label
+            boolean active
     ) {
         int color = active ? 0xFFEAD075 : 0x99FFFFFF;
         int x1 = bounds.x() - 4;
@@ -173,13 +137,6 @@ public final class EditHud extends Screen {
         context.fill(x1, y2 - 1, x2, y2, color);
         context.fill(x1, y1, x1 + 1, y2, color);
         context.fill(x2 - 1, y1, x2, y2, color);
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal(label),
-                x1,
-                Math.max(2, y1 - textRenderer.fontHeight - 2),
-                color
-        );
     }
 
     @Override
