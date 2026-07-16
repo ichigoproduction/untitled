@@ -44,6 +44,7 @@ public final class ContentTimer {
     private static final int DANGER_GLOW_COLOR = 0x66EF4444;
 
     private static final int TEXT_GAP = 6;
+    private static final int SCREEN_MARGIN = 2;
     private static final Style BOLD_STYLE = Style.EMPTY.withBold(true);
 
     private static boolean initialized = false;
@@ -56,6 +57,9 @@ public final class ContentTimer {
     private static long nextQueryMs = 0L;
     private static long expectingResponseUntilMs = 0L;
     private static String area = "";
+    private static int offsetX = 0;
+    private static int offsetY = 0;
+    private static EditHud.HudBounds lastEditorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private ContentTimer() {
     }
@@ -82,9 +86,39 @@ public final class ContentTimer {
         );
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> resetForJoin());
-
         ClientTickEvents.END_CLIENT_TICK.register(ContentTimer::tick);
         HudRenderCallback.EVENT.register((context, tickCounter) -> renderHud(context));
+    }
+
+    static int getOffsetX() {
+        return offsetX;
+    }
+
+    static int getOffsetY() {
+        return offsetY;
+    }
+
+    static void setOffsets(int x, int y) {
+        offsetX = x;
+        offsetY = y;
+    }
+
+    static void moveBy(int dx, int dy) {
+        offsetX += dx;
+        offsetY += dy;
+    }
+
+    static void resetPosition() {
+        offsetX = 0;
+        offsetY = 0;
+    }
+
+    static EditHud.HudBounds getEditorBounds() {
+        return lastEditorBounds;
+    }
+
+    static void renderEditorPreview(DrawContext context) {
+        lastEditorBounds = renderValue(context, "12:34 [A]", false);
     }
 
     private static void registerCommand() {
@@ -94,11 +128,9 @@ public final class ContentTimer {
                                 .then(ClientCommandManager.literal("toggle")
                                         .executes(context -> {
                                             visible = !visible;
-
                                             if (visible) {
                                                 nextQueryMs = 0L;
                                             }
-
                                             return 1;
                                         }))
                 )
@@ -121,7 +153,6 @@ public final class ContentTimer {
         }
 
         long now = System.currentTimeMillis();
-
         if (refreshWhenTimerEnds && endMs > 0L && now >= endMs) {
             refreshWhenTimerEnds = false;
             endMs = 0L;
@@ -149,12 +180,10 @@ public final class ContentTimer {
         while (normalized.startsWith("/")) {
             normalized = normalized.substring(1);
         }
-
         int space = normalized.indexOf(' ');
         if (space >= 0) {
             normalized = normalized.substring(0, space);
         }
-
         return QUERY_COMMAND.equalsIgnoreCase(normalized);
     }
 
@@ -174,7 +203,6 @@ public final class ContentTimer {
             );
             return false;
         }
-
         return true;
     }
 
@@ -263,24 +291,19 @@ public final class ContentTimer {
 
     private static boolean isPrivateUseDecorationLine(String raw) {
         boolean sawPrivateUse = false;
-
         for (int offset = 0; offset < raw.length();) {
             int codePoint = raw.codePointAt(offset);
-
             if (Character.isWhitespace(codePoint)) {
                 offset += Character.charCount(codePoint);
                 continue;
             }
-
             if (isPrivateUse(codePoint)) {
                 sawPrivateUse = true;
                 offset += Character.charCount(codePoint);
                 continue;
             }
-
             return false;
         }
-
         return sawPrivateUse;
     }
 
@@ -293,6 +316,7 @@ public final class ContentTimer {
     private static void renderHud(DrawContext context) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (!visible
+                || client.currentScreen instanceof EditHud
                 || client.player == null
                 || client.world == null
                 || client.options.hudHidden) {
@@ -301,7 +325,6 @@ public final class ContentTimer {
 
         String value;
         long remainingMs = Math.max(0L, endMs - System.currentTimeMillis());
-
         if (remainingMs > 0L) {
             value = formatRemaining(remainingMs);
         } else if (normalPower) {
@@ -313,13 +336,27 @@ public final class ContentTimer {
         if (!area.isBlank()) {
             value += " [" + area + "]";
         }
+        renderValue(context, value, dangerTimer && remainingMs > 0L);
+    }
 
+    private static EditHud.HudBounds renderValue(
+            DrawContext context,
+            String value,
+            boolean danger
+    ) {
+        MinecraftClient client = MinecraftClient.getInstance();
         int iconWidth = client.textRenderer.getWidth(POWER_ICON);
         int totalWidth = iconWidth + TEXT_GAP + client.textRenderer.getWidth(value);
-        int x = (client.getWindow().getScaledWidth() - totalWidth) / 2;
-        int y = 10;
+        int totalHeight = client.textRenderer.fontHeight + 3;
+        int screenWidth = context.getScaledWindowWidth();
+        int screenHeight = context.getScaledWindowHeight();
+        int x = (screenWidth - totalWidth) / 2 + offsetX;
+        int y = 10 + offsetY;
+        x = clamp(x, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, screenWidth - totalWidth - SCREEN_MARGIN));
+        y = clamp(y, SCREEN_MARGIN, Math.max(SCREEN_MARGIN, screenHeight - totalHeight - SCREEN_MARGIN));
 
-        drawGradientLine(context, client, x, y, value, dangerTimer && remainingMs > 0L);
+        drawGradientLine(context, client, x, y, value, danger);
+        return new EditHud.HudBounds(x, y, totalWidth, totalHeight);
     }
 
     private static void drawGradientLine(
@@ -339,47 +376,14 @@ public final class ContentTimer {
         int timeColorB = danger ? DANGER_TIME_COLOR_B : TIME_COLOR_B;
         int glowColor = danger ? DANGER_GLOW_COLOR : GLOW_COLOR;
 
-        drawGradientString(
-                context,
-                client,
-                POWER_ICON,
-                x + 1,
-                y + 1,
-                iconColorA,
-                iconColorB,
-                glowColor
-        );
-        drawGradientString(
-                context,
-                client,
-                value,
-                valueX + 1,
-                y + 2,
-                timeColorA,
-                timeColorB,
-                glowColor
-        );
-
-        drawGradientString(
-                context,
-                client,
-                POWER_ICON,
-                x,
-                y,
-                iconColorA,
-                iconColorB,
-                0
-        );
-        drawGradientString(
-                context,
-                client,
-                value,
-                valueX,
-                y + 1,
-                timeColorA,
-                timeColorB,
-                0
-        );
+        drawGradientString(context, client, POWER_ICON, x + 1, y + 1,
+                iconColorA, iconColorB, glowColor);
+        drawGradientString(context, client, value, valueX + 1, y + 2,
+                timeColorA, timeColorB, glowColor);
+        drawGradientString(context, client, POWER_ICON, x, y,
+                iconColorA, iconColorB, 0);
+        drawGradientString(context, client, value, valueX, y + 1,
+                timeColorA, timeColorB, 0);
     }
 
     private static void drawGradientString(
@@ -398,13 +402,11 @@ public final class ContentTimer {
 
         int currentX = x;
         int characterCount = value.length();
-
         for (int index = 0; index < characterCount; index++) {
             String character = value.substring(index, index + 1);
             float progress = characterCount <= 1
                     ? 0.0F
                     : index / (float) (characterCount - 1);
-
             int color = lerpArgb(colorA, colorB, progress);
             if (overrideAlphaColor != 0) {
                 int alpha = (overrideAlphaColor >>> 24) & 0xFF;
@@ -412,37 +414,25 @@ public final class ContentTimer {
             }
 
             Text text = Text.literal(character).setStyle(BOLD_STYLE);
-            context.drawText(
-                    client.textRenderer,
-                    text,
-                    currentX,
-                    y,
-                    color,
-                    false
-            );
-
+            context.drawText(client.textRenderer, text, currentX, y, color, false);
             currentX += client.textRenderer.getWidth(text);
         }
     }
 
     private static int lerpArgb(int colorA, int colorB, float progress) {
         progress = Math.max(0.0F, Math.min(1.0F, progress));
-
         int alphaA = (colorA >>> 24) & 0xFF;
         int redA = (colorA >>> 16) & 0xFF;
         int greenA = (colorA >>> 8) & 0xFF;
         int blueA = colorA & 0xFF;
-
         int alphaB = (colorB >>> 24) & 0xFF;
         int redB = (colorB >>> 16) & 0xFF;
         int greenB = (colorB >>> 8) & 0xFF;
         int blueB = colorB & 0xFF;
-
         int alpha = (int) (alphaA + (alphaB - alphaA) * progress);
         int red = (int) (redA + (redB - redA) * progress);
         int green = (int) (greenA + (greenB - greenA) * progress);
         int blue = (int) (blueA + (blueB - blueA) * progress);
-
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
@@ -451,11 +441,9 @@ public final class ContentTimer {
         long hours = totalSeconds / 3600L;
         long minutes = (totalSeconds % 3600L) / 60L;
         long seconds = totalSeconds % 60L;
-
         if (hours > 0L) {
             return String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds);
         }
-
         return String.format(Locale.ROOT, "%d:%02d", minutes, seconds);
     }
 
@@ -464,7 +452,6 @@ public final class ContentTimer {
         seconds += matchUnit(text, HOURS_PATTERN) * 3600L;
         seconds += matchUnit(text, MINUTES_PATTERN) * 60L;
         seconds += matchUnit(text, SECONDS_PATTERN);
-
         if (seconds > 0L) {
             return seconds * 1000L;
         }
@@ -473,15 +460,12 @@ public final class ContentTimer {
         if (!matcher.find()) {
             return 0L;
         }
-
         long first = parseLong(matcher.group(1));
         long second = parseLong(matcher.group(2));
         String third = matcher.group(3);
-
         if (third == null) {
             return (first * 60L + second) * 1000L;
         }
-
         return (first * 3600L + second * 60L + parseLong(third)) * 1000L;
     }
 
@@ -496,5 +480,9 @@ public final class ContentTimer {
         } catch (NumberFormatException ignored) {
             return 0L;
         }
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 }
