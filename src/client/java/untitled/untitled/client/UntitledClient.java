@@ -5,10 +5,12 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 
 import java.util.Locale;
@@ -20,25 +22,41 @@ public class UntitledClient implements ClientModInitializer {
     private static final String POWER_ICON = "\uE433";
 
     private static final long QUERY_INTERVAL_MS = 60_000L;
-    private static final long RESPONSE_HIDE_WINDOW_MS = 3_000L;
+    private static final long RESPONSE_HIDE_WINDOW_MS = 5_000L;
+    private static final long RESPONSE_LINE_EXTENSION_MS = 900L;
 
-    private static final Pattern REMAIN_PATTERN = Pattern.compile("\\[\\s*남은시간\\s*:\\s*([^\\]]+)\\]");
+    private static final Pattern AREA_PATTERN =
+            Pattern.compile("장소\\s*:\\s*송전소\\s*([A-Za-z0-9가-힣]+)\\s*구역");
     private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d+)\\s*시간");
     private static final Pattern MINUTES_PATTERN = Pattern.compile("(\\d+)\\s*분");
     private static final Pattern SECONDS_PATTERN = Pattern.compile("(\\d+)\\s*초");
     private static final Pattern COLON_PATTERN = Pattern.compile("(\\d+):(\\d{2})(?::(\\d{2}))?");
 
+    private static final int ICON_COLOR_A = 0xFFFFD166;
+    private static final int ICON_COLOR_B = 0xFFF59E0B;
+    private static final int TIME_COLOR_A = 0xFFFFB703;
+    private static final int TIME_COLOR_B = 0xFFB45309;
+    private static final int GLOW_COLOR = 0x55F59E0B;
+    private static final int TEXT_GAP = 6;
+    private static final Style BOLD_STYLE = Style.EMPTY.withBold(true);
+
     private static boolean visible = true;
     private static boolean normalPower = false;
-    private static boolean surveillance = false;
 
     private static long endMs = 0L;
     private static long nextQueryMs = 0L;
-    private static long hideAutoResponseUntilMs = 0L;
+    private static long expectingResponseUntilMs = 0L;
+    private static String area = "";
 
     @Override
     public void onInitializeClient() {
         registerCommand();
+
+        ClientSendMessageEvents.COMMAND.register(command -> {
+            if (isPowerQueryCommand(command)) {
+                beginResponseWindow(System.currentTimeMillis());
+            }
+        });
 
         ClientReceiveMessageEvents.ALLOW_CHAT.register(
                 (message, signedMessage, sender, params, timestamp) -> handleIncoming(message)
@@ -48,9 +66,10 @@ public class UntitledClient implements ClientModInitializer {
         );
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            endMs = 0L;
             normalPower = false;
-            surveillance = false;
+            endMs = 0L;
+            area = "";
+            expectingResponseUntilMs = 0L;
             nextQueryMs = System.currentTimeMillis() + 1_000L;
         });
 
@@ -70,14 +89,6 @@ public class UntitledClient implements ClientModInitializer {
                                                 nextQueryMs = 0L;
                                             }
 
-                                            MinecraftClient client = MinecraftClient.getInstance();
-                                            if (client.player != null) {
-                                                client.player.sendMessage(
-                                                        Text.literal("[untitled] 송전소 HUD: " + (visible ? "켜짐" : "꺼짐")),
-                                                        false
-                                                );
-                                            }
-
                                             return 1;
                                         }))
                 )
@@ -91,10 +102,33 @@ public class UntitledClient implements ClientModInitializer {
 
         long now = System.currentTimeMillis();
         if (nextQueryMs == 0L || now >= nextQueryMs) {
+            beginResponseWindow(now);
             client.player.networkHandler.sendChatCommand(QUERY_COMMAND);
             nextQueryMs = now + QUERY_INTERVAL_MS;
-            hideAutoResponseUntilMs = now + RESPONSE_HIDE_WINDOW_MS;
         }
+    }
+
+    private static void beginResponseWindow(long now) {
+        expectingResponseUntilMs = now + RESPONSE_HIDE_WINDOW_MS;
+        area = "";
+    }
+
+    private static boolean isPowerQueryCommand(String command) {
+        if (command == null) {
+            return false;
+        }
+
+        String normalized = command.trim();
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+
+        int space = normalized.indexOf(' ');
+        if (space >= 0) {
+            normalized = normalized.substring(0, space);
+        }
+
+        return QUERY_COMMAND.equalsIgnoreCase(normalized);
     }
 
     private static boolean handleIncoming(Text message) {
@@ -104,50 +138,109 @@ public class UntitledClient implements ClientModInitializer {
 
         String raw = message.getString();
         long now = System.currentTimeMillis();
-        boolean matched = readTimer(raw, now) || readNormalPower(raw, now);
+        boolean matched = readPowerLine(raw, now);
 
-        if (now <= hideAutoResponseUntilMs && (matched || isLikelyPowerResponse(raw))) {
+        if (now <= expectingResponseUntilMs && (matched || isLikelyPowerResponseLine(raw))) {
+            expectingResponseUntilMs = Math.max(
+                    expectingResponseUntilMs,
+                    now + RESPONSE_LINE_EXTENSION_MS
+            );
             return false;
         }
 
         return true;
     }
 
-    private static boolean readTimer(String raw, long now) {
-        Matcher matcher = REMAIN_PATTERN.matcher(raw);
-        if (!matcher.find()) {
-            return false;
+    private static boolean readPowerLine(String raw, long now) {
+        boolean matched = false;
+
+        Matcher areaMatcher = AREA_PATTERN.matcher(raw);
+        if (areaMatcher.find()) {
+            area = areaMatcher.group(1).toUpperCase(Locale.ROOT);
+            matched = true;
         }
 
-        long durationMs = parseDurationMs(matcher.group(1));
-        if (durationMs <= 0L) {
-            return false;
+        if (raw.contains("현재 송전소가 정상 작동중입니다")
+                || (raw.contains("송전소") && raw.contains("정상 작동중"))) {
+            normalPower = true;
+            endMs = 0L;
+            matched = true;
         }
 
-        endMs = now + durationMs;
-        normalPower = false;
-        surveillance = raw.contains("집중 감시중") || raw.contains("집중 감시");
-        nextQueryMs = now + QUERY_INTERVAL_MS;
-        return true;
+        if (raw.contains("송전소에 테러가 예고되었습니다")
+                || raw.contains("현재 송전소에서 폭탄전이 진행중입니다")
+                || raw.contains("현재 송전소가 테러로 인해 가동 중단된 상태입니다")) {
+            normalPower = false;
+            endMs = 0L;
+            matched = true;
+        }
+
+        if (isPowerTimerLine(raw)) {
+            long durationMs = parseDurationMs(raw);
+            if (durationMs > 0L) {
+                normalPower = false;
+                endMs = now + durationMs;
+                nextQueryMs = now + QUERY_INTERVAL_MS;
+                matched = true;
+            }
+        }
+
+        return matched;
     }
 
-    private static boolean readNormalPower(String raw, long now) {
-        if (!raw.contains("송전소") || !raw.contains("정상 작동중")) {
-            return false;
-        }
-
-        endMs = 0L;
-        normalPower = true;
-        surveillance = false;
-        nextQueryMs = now + QUERY_INTERVAL_MS;
-        return true;
+    private static boolean isPowerTimerLine(String raw) {
+        return raw.contains("테러가 예고되어있습니다")
+                || raw.contains("폭파까지 남은시간")
+                || raw.contains("수리 진행중")
+                || raw.contains("[남은시간");
     }
 
-    private static boolean isLikelyPowerResponse(String raw) {
-        return raw.contains("남은시간")
+    private static boolean isLikelyPowerResponseLine(String raw) {
+        return raw.trim().isEmpty()
                 || raw.contains("송전소")
-                || raw.contains("테러시도")
-                || raw.contains(QUERY_COMMAND);
+                || raw.contains("남은시간")
+                || raw.contains("테러")
+                || raw.contains("폭파")
+                || raw.contains("장소:")
+                || raw.contains("기여도:")
+                || raw.contains("수리 진행중")
+                || raw.contains("주요시설")
+                || raw.contains("보안")
+                || raw.contains("자세한 정보")
+                || raw.contains("도움말")
+                || raw.contains("/송전소")
+                || raw.contains("/thdwjsth")
+                || raw.contains(QUERY_COMMAND)
+                || isPrivateUseDecorationLine(raw);
+    }
+
+    private static boolean isPrivateUseDecorationLine(String raw) {
+        boolean sawPrivateUse = false;
+
+        for (int offset = 0; offset < raw.length();) {
+            int codePoint = raw.codePointAt(offset);
+
+            if (Character.isWhitespace(codePoint)) {
+                offset += Character.charCount(codePoint);
+                continue;
+            }
+
+            if (isPrivateUse(codePoint)) {
+                sawPrivateUse = true;
+                offset += Character.charCount(codePoint);
+                continue;
+            }
+
+            return false;
+        }
+
+        return sawPrivateUse;
+    }
+
+    private static boolean isPrivateUse(int codePoint) {
+        return (codePoint >= 0xE000 && codePoint <= 0xF8FF)
+                || (codePoint >= 0xF0000 && codePoint <= 0xFFFFD)
+                || (codePoint >= 0x100000 && codePoint <= 0x10FFFD);
     }
 
     private static void renderHud(DrawContext context) {
@@ -160,39 +253,143 @@ public class UntitledClient implements ClientModInitializer {
         }
 
         String value;
-        if (normalPower) {
+        long remainingMs = Math.max(0L, endMs - System.currentTimeMillis());
+
+        if (remainingMs > 0L) {
+            value = formatRemaining(remainingMs);
+        } else if (normalPower) {
             value = "작동";
         } else {
-            long remainingMs = Math.max(0L, endMs - System.currentTimeMillis());
-            if (remainingMs <= 0L) {
-                return;
-            }
-
-            value = formatRemaining(remainingMs);
-            if (surveillance) {
-                value += " 감시";
-            }
+            return;
         }
 
-        Text icon = Text.literal(POWER_ICON).styled(style -> style.withBold(true));
-        Text timer = Text.literal(value).styled(style -> style.withBold(true));
+        if (!area.isBlank()) {
+            value += " [" + area + "]";
+        }
 
-        int gap = 6;
-        int totalWidth = client.textRenderer.getWidth(icon)
-                + gap
-                + client.textRenderer.getWidth(timer);
+        int iconWidth = client.textRenderer.getWidth(POWER_ICON);
+        int totalWidth = iconWidth + TEXT_GAP + client.textRenderer.getWidth(value);
         int x = (client.getWindow().getScaledWidth() - totalWidth) / 2;
         int y = 10;
 
-        context.drawText(client.textRenderer, icon, x, y, 0xFFFFD166, true);
-        context.drawText(
-                client.textRenderer,
-                timer,
-                x + client.textRenderer.getWidth(icon) + gap,
+        drawGradientLine(context, client, x, y, value);
+    }
+
+    private static void drawGradientLine(
+            DrawContext context,
+            MinecraftClient client,
+            int x,
+            int y,
+            String value
+    ) {
+        int iconWidth = client.textRenderer.getWidth(POWER_ICON);
+        int valueX = x + iconWidth + TEXT_GAP;
+
+        drawGradientString(
+                context,
+                client,
+                POWER_ICON,
+                x + 1,
                 y + 1,
-                0xFFFFB703,
-                true
+                ICON_COLOR_A,
+                ICON_COLOR_B,
+                GLOW_COLOR
         );
+        drawGradientString(
+                context,
+                client,
+                value,
+                valueX + 1,
+                y + 2,
+                TIME_COLOR_A,
+                TIME_COLOR_B,
+                GLOW_COLOR
+        );
+
+        drawGradientString(
+                context,
+                client,
+                POWER_ICON,
+                x,
+                y,
+                ICON_COLOR_A,
+                ICON_COLOR_B,
+                0
+        );
+        drawGradientString(
+                context,
+                client,
+                value,
+                valueX,
+                y + 1,
+                TIME_COLOR_A,
+                TIME_COLOR_B,
+                0
+        );
+    }
+
+    private static void drawGradientString(
+            DrawContext context,
+            MinecraftClient client,
+            String value,
+            int x,
+            int y,
+            int colorA,
+            int colorB,
+            int overrideAlphaColor
+    ) {
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+
+        int currentX = x;
+        int characterCount = value.length();
+
+        for (int index = 0; index < characterCount; index++) {
+            String character = value.substring(index, index + 1);
+            float progress = characterCount <= 1
+                    ? 0.0F
+                    : index / (float) (characterCount - 1);
+
+            int color = lerpArgb(colorA, colorB, progress);
+            if (overrideAlphaColor != 0) {
+                int alpha = (overrideAlphaColor >>> 24) & 0xFF;
+                color = (alpha << 24) | (color & 0x00FFFFFF);
+            }
+
+            Text text = Text.literal(character).setStyle(BOLD_STYLE);
+            context.drawText(
+                    client.textRenderer,
+                    text,
+                    currentX,
+                    y,
+                    color,
+                    false
+            );
+
+            currentX += client.textRenderer.getWidth(text);
+        }
+    }
+
+    private static int lerpArgb(int colorA, int colorB, float progress) {
+        progress = Math.max(0.0F, Math.min(1.0F, progress));
+
+        int alphaA = (colorA >>> 24) & 0xFF;
+        int redA = (colorA >>> 16) & 0xFF;
+        int greenA = (colorA >>> 8) & 0xFF;
+        int blueA = colorA & 0xFF;
+
+        int alphaB = (colorB >>> 24) & 0xFF;
+        int redB = (colorB >>> 16) & 0xFF;
+        int greenB = (colorB >>> 8) & 0xFF;
+        int blueB = colorB & 0xFF;
+
+        int alpha = (int) (alphaA + (alphaB - alphaA) * progress);
+        int red = (int) (redA + (redB - redA) * progress);
+        int green = (int) (greenA + (greenB - greenA) * progress);
+        int blue = (int) (blueA + (blueB - blueA) * progress);
+
+        return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
     private static String formatRemaining(long milliseconds) {
@@ -204,6 +401,7 @@ public class UntitledClient implements ClientModInitializer {
         if (hours > 0L) {
             return String.format(Locale.ROOT, "%d:%02d:%02d", hours, minutes, seconds);
         }
+
         return String.format(Locale.ROOT, "%d:%02d", minutes, seconds);
     }
 
@@ -229,6 +427,7 @@ public class UntitledClient implements ClientModInitializer {
         if (third == null) {
             return (first * 60L + second) * 1000L;
         }
+
         return (first * 3600L + second * 60L + parseLong(third)) * 1000L;
     }
 
