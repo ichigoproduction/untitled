@@ -22,11 +22,11 @@ public class UntitledClient implements ClientModInitializer {
     private static final String POWER_ICON = "\uE433";
 
     private static final long QUERY_INTERVAL_MS = 60_000L;
-    private static final long RESPONSE_HIDE_WINDOW_MS = 5_000L;
+    private static final long RESPONSE_HIDE_WINDOW_MS = 3_000L;
     private static final long RESPONSE_LINE_EXTENSION_MS = 900L;
 
     private static final Pattern AREA_PATTERN =
-            Pattern.compile("장소\\s*:\\s*송전소\\s*([A-Za-z0-9가-힣]+)\\s*구역");
+            Pattern.compile("장소\\s*:\\s*송전소\\s*([ABCabc])\\s*구역");
     private static final Pattern HOURS_PATTERN = Pattern.compile("(\\d+)\\s*시간");
     private static final Pattern MINUTES_PATTERN = Pattern.compile("(\\d+)\\s*분");
     private static final Pattern SECONDS_PATTERN = Pattern.compile("(\\d+)\\s*초");
@@ -37,11 +37,20 @@ public class UntitledClient implements ClientModInitializer {
     private static final int TIME_COLOR_A = 0xFFFFB703;
     private static final int TIME_COLOR_B = 0xFFB45309;
     private static final int GLOW_COLOR = 0x55F59E0B;
+
+    private static final int DANGER_ICON_COLOR_A = 0xFFFF7A7A;
+    private static final int DANGER_ICON_COLOR_B = 0xFFC62828;
+    private static final int DANGER_TIME_COLOR_A = 0xFFFF5252;
+    private static final int DANGER_TIME_COLOR_B = 0xFF8E0000;
+    private static final int DANGER_GLOW_COLOR = 0x66EF4444;
+
     private static final int TEXT_GAP = 6;
     private static final Style BOLD_STYLE = Style.EMPTY.withBold(true);
 
     private static boolean visible = true;
     private static boolean normalPower = false;
+    private static boolean dangerTimer = false;
+    private static boolean refreshWhenTimerEnds = false;
 
     private static long endMs = 0L;
     private static long nextQueryMs = 0L;
@@ -65,13 +74,7 @@ public class UntitledClient implements ClientModInitializer {
                 (message, overlay) -> handleIncoming(message)
         );
 
-        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            normalPower = false;
-            endMs = 0L;
-            area = "";
-            expectingResponseUntilMs = 0L;
-            nextQueryMs = System.currentTimeMillis() + 1_000L;
-        });
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> resetForJoin());
 
         ClientTickEvents.END_CLIENT_TICK.register(UntitledClient::tick);
         HudRenderCallback.EVENT.register((context, tickCounter) -> renderHud(context));
@@ -91,8 +94,40 @@ public class UntitledClient implements ClientModInitializer {
 
                                             return 1;
                                         }))
+                                .then(ClientCommandManager.literal("debug")
+                                        .executes(context -> {
+                                            runDebugSample();
+                                            return 1;
+                                        }))
                 )
         );
+    }
+
+    private static void resetForJoin() {
+        normalPower = false;
+        dangerTimer = false;
+        refreshWhenTimerEnds = false;
+        endMs = 0L;
+        area = "";
+        expectingResponseUntilMs = 0L;
+        nextQueryMs = System.currentTimeMillis() + 1_000L;
+    }
+
+    private static void runDebugSample() {
+        long now = System.currentTimeMillis();
+
+        visible = true;
+        normalPower = false;
+        dangerTimer = false;
+        refreshWhenTimerEnds = false;
+        endMs = 0L;
+        area = "";
+
+        readPowerLine("현재 송전소에서 폭탄전이 진행중입니다.", now);
+        readPowerLine("폭파까지 남은시간: 12분 27초전", now);
+        readPowerLine("장소: 송전소 A구역", now);
+
+        nextQueryMs = now + QUERY_INTERVAL_MS;
     }
 
     private static void tick(MinecraftClient client) {
@@ -101,6 +136,13 @@ public class UntitledClient implements ClientModInitializer {
         }
 
         long now = System.currentTimeMillis();
+
+        if (refreshWhenTimerEnds && endMs > 0L && now >= endMs) {
+            refreshWhenTimerEnds = false;
+            endMs = 0L;
+            nextQueryMs = 0L;
+        }
+
         if (nextQueryMs == 0L || now >= nextQueryMs) {
             beginResponseWindow(now);
             client.player.networkHandler.sendChatCommand(QUERY_COMMAND);
@@ -163,14 +205,32 @@ public class UntitledClient implements ClientModInitializer {
         if (raw.contains("현재 송전소가 정상 작동중입니다")
                 || (raw.contains("송전소") && raw.contains("정상 작동중"))) {
             normalPower = true;
+            dangerTimer = false;
+            refreshWhenTimerEnds = false;
             endMs = 0L;
             matched = true;
         }
 
-        if (raw.contains("송전소에 테러가 예고되었습니다")
-                || raw.contains("현재 송전소에서 폭탄전이 진행중입니다")
-                || raw.contains("현재 송전소가 테러로 인해 가동 중단된 상태입니다")) {
+        if (raw.contains("송전소에 테러가 예고되었습니다")) {
             normalPower = false;
+            dangerTimer = false;
+            refreshWhenTimerEnds = false;
+            endMs = 0L;
+            matched = true;
+        }
+
+        if (raw.contains("현재 송전소에서 폭탄전이 진행중입니다")) {
+            normalPower = false;
+            dangerTimer = true;
+            refreshWhenTimerEnds = false;
+            endMs = 0L;
+            matched = true;
+        }
+
+        if (raw.contains("현재 송전소가 테러로 인해 가동 중단된 상태입니다")) {
+            normalPower = false;
+            dangerTimer = false;
+            refreshWhenTimerEnds = false;
             endMs = 0L;
             matched = true;
         }
@@ -179,7 +239,9 @@ public class UntitledClient implements ClientModInitializer {
             long durationMs = parseDurationMs(raw);
             if (durationMs > 0L) {
                 normalPower = false;
+                dangerTimer = raw.contains("폭파까지 남은시간");
                 endMs = now + durationMs;
+                refreshWhenTimerEnds = true;
                 nextQueryMs = now + QUERY_INTERVAL_MS;
                 matched = true;
             }
@@ -272,7 +334,7 @@ public class UntitledClient implements ClientModInitializer {
         int x = (client.getWindow().getScaledWidth() - totalWidth) / 2;
         int y = 10;
 
-        drawGradientLine(context, client, x, y, value);
+        drawGradientLine(context, client, x, y, value, dangerTimer && remainingMs > 0L);
     }
 
     private static void drawGradientLine(
@@ -280,10 +342,17 @@ public class UntitledClient implements ClientModInitializer {
             MinecraftClient client,
             int x,
             int y,
-            String value
+            String value,
+            boolean danger
     ) {
         int iconWidth = client.textRenderer.getWidth(POWER_ICON);
         int valueX = x + iconWidth + TEXT_GAP;
+
+        int iconColorA = danger ? DANGER_ICON_COLOR_A : ICON_COLOR_A;
+        int iconColorB = danger ? DANGER_ICON_COLOR_B : ICON_COLOR_B;
+        int timeColorA = danger ? DANGER_TIME_COLOR_A : TIME_COLOR_A;
+        int timeColorB = danger ? DANGER_TIME_COLOR_B : TIME_COLOR_B;
+        int glowColor = danger ? DANGER_GLOW_COLOR : GLOW_COLOR;
 
         drawGradientString(
                 context,
@@ -291,9 +360,9 @@ public class UntitledClient implements ClientModInitializer {
                 POWER_ICON,
                 x + 1,
                 y + 1,
-                ICON_COLOR_A,
-                ICON_COLOR_B,
-                GLOW_COLOR
+                iconColorA,
+                iconColorB,
+                glowColor
         );
         drawGradientString(
                 context,
@@ -301,9 +370,9 @@ public class UntitledClient implements ClientModInitializer {
                 value,
                 valueX + 1,
                 y + 2,
-                TIME_COLOR_A,
-                TIME_COLOR_B,
-                GLOW_COLOR
+                timeColorA,
+                timeColorB,
+                glowColor
         );
 
         drawGradientString(
@@ -312,8 +381,8 @@ public class UntitledClient implements ClientModInitializer {
                 POWER_ICON,
                 x,
                 y,
-                ICON_COLOR_A,
-                ICON_COLOR_B,
+                iconColorA,
+                iconColorB,
                 0
         );
         drawGradientString(
@@ -322,8 +391,8 @@ public class UntitledClient implements ClientModInitializer {
                 value,
                 valueX,
                 y + 1,
-                TIME_COLOR_A,
-                TIME_COLOR_B,
+                timeColorA,
+                timeColorB,
                 0
         );
     }
