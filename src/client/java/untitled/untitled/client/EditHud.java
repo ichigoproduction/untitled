@@ -25,7 +25,8 @@ public final class EditHud extends Screen {
     private enum DragTarget {
         NONE,
         CONTENT,
-        PARTY
+        PARTY,
+        FOOD_STACK
     }
 
     public record HudBounds(int x, int y, int width, int height) {
@@ -68,6 +69,7 @@ public final class EditHud extends Screen {
                         .then(literal("reset").executes(context -> {
                             ContentTimer.resetPosition();
                             PartyHud.resetPosition();
+                            FoodStack.resetPosition();
                             saveSettings();
                             return 1;
                         }))
@@ -105,9 +107,11 @@ public final class EditHud extends Screen {
 
         ContentTimer.renderEditorPreview(context);
         PartyHud.renderEditorPreview(context);
+        FoodStack.renderEditorPreview(context);
 
         HudBounds contentBounds = ContentTimer.getEditorBounds();
         HudBounds partyBounds = PartyHud.getEditorBounds();
+        HudBounds foodStackBounds = FoodStack.getEditorBounds();
 
         drawSelectionBox(
                 context,
@@ -120,6 +124,12 @@ public final class EditHud extends Screen {
                 partyBounds,
                 dragTarget == DragTarget.PARTY || partyBounds.contains(mouseX, mouseY),
                 "Party HUD"
+        );
+        drawSelectionBox(
+                context,
+                foodStackBounds,
+                dragTarget == DragTarget.FOOD_STACK || foodStackBounds.contains(mouseX, mouseY),
+                "FoodStack HUD"
         );
 
         context.drawCenteredTextWithShadow(
@@ -138,7 +148,7 @@ public final class EditHud extends Screen {
         );
         context.drawCenteredTextWithShadow(
                 textRenderer,
-                Text.literal("/hud reset restores both default positions"),
+                Text.literal("/hud reset restores all default positions"),
                 width / 2,
                 38,
                 0x8F9AAA
@@ -183,6 +193,10 @@ public final class EditHud extends Screen {
                 dragTarget = DragTarget.PARTY;
                 return true;
             }
+            if (FoodStack.getEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.FOOD_STACK;
+                return true;
+            }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -203,6 +217,8 @@ public final class EditHud extends Screen {
                 ContentTimer.moveBy(moveX, moveY);
             } else if (dragTarget == DragTarget.PARTY) {
                 PartyHud.moveBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.FOOD_STACK) {
+                FoodStack.moveBy(moveX, moveY);
             }
             return true;
         }
@@ -257,6 +273,7 @@ public final class EditHud extends Screen {
             ContentTimer.setOffsets(contentX, contentY);
             PartyHud.setOffsets(partyX, partyY);
             PartyHud.readSettings(root);
+            FoodStack.readSettings(root);
         } catch (Exception ignored) {
         }
     }
@@ -271,6 +288,7 @@ public final class EditHud extends Screen {
             root.addProperty("partyOffsetX", PartyHud.getOffsetX());
             root.addProperty("partyOffsetY", PartyHud.getOffsetY());
             PartyHud.writeSettings(root);
+            FoodStack.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
                     CONFIG_PATH,

@@ -9,5 +9,6 @@ public class UntitledClient implements ClientModInitializer {
         ContentTimer.init();
         PartyHud.init();
         CameraControl.init();
+        FoodStack.init();
     }
 }
