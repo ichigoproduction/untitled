@@ -1,15 +1,16 @@
 package untitled.untitled.client;
 
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.item.MaceItem;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
+import net.minecraft.util.hit.EntityHitResult;
 
 public final class NewSwap {
     private static final String SOURCE_ITEM_NAME = "연";
@@ -26,24 +27,29 @@ public final class NewSwap {
         initialized = true;
     }
 
-    public static void beforeAttack(PlayerEntity player, Entity target) {
-        restoreStaleSwap();
+    public static void beforeAttack(MinecraftClient client) {
+        restoreStaleSwap(client);
 
-        MinecraftClient client = MinecraftClient.getInstance();
         if (!initialized
+                || client == null
                 || client.player == null
                 || client.getNetworkHandler() == null
-                || player != client.player
-                || player.isSpectator()) {
+                || client.player.isSpectator()) {
             return;
         }
 
+        if (!(client.crosshairTarget instanceof EntityHitResult entityHitResult)) {
+            return;
+        }
+
+        Entity target = entityHitResult.getEntity();
         if (!(target instanceof LivingEntity livingTarget)
                 || !livingTarget.isAlive()
-                || target == player) {
+                || target == client.player) {
             return;
         }
 
+        ClientPlayerEntity player = client.player;
         if (!MaceItem.shouldDealAdditionalDamage(player)) {
             return;
         }
@@ -73,18 +79,21 @@ public final class NewSwap {
         selectSlot(client, inventory, foundMaceSlot);
     }
 
-    public static void afterAttack(PlayerEntity player) {
+    public static void afterAttack(MinecraftClient client) {
         if (!attackSwapActive) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        PlayerInventory inventory = player.getInventory();
-        int slotToRestore = sourceSlot;
+        if (client == null
+                || client.player == null
+                || client.getNetworkHandler() == null) {
+            clearState();
+            return;
+        }
 
-        boolean canRestore = client.player == player
-                && client.getNetworkHandler() != null
-                && PlayerInventory.isValidHotbarIndex(slotToRestore)
+        PlayerInventory inventory = client.player.getInventory();
+        int slotToRestore = sourceSlot;
+        boolean canRestore = PlayerInventory.isValidHotbarIndex(slotToRestore)
                 && matches(
                         inventory.getStack(slotToRestore),
                         Items.PRISMARINE_SHARD,
@@ -98,18 +107,12 @@ public final class NewSwap {
         }
     }
 
-    private static void restoreStaleSwap() {
+    private static void restoreStaleSwap(MinecraftClient client) {
         if (!attackSwapActive) {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.getNetworkHandler() == null) {
-            clearState();
-            return;
-        }
-
-        afterAttack(client.player);
+        afterAttack(client);
     }
 
     private static int findNamedMaceSlot(PlayerInventory inventory) {
