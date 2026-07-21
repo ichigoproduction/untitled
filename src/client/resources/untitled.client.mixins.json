@@ -4,7 +4,8 @@
   "package": "untitled.untitled.mixin.client",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "CameraMixin"
+    "CameraMixin",
+    "NewSwapMixin"
   ],
   "injectors": {
     "defaultRequire": 1
