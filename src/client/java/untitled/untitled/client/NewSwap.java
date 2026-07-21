@@ -15,8 +15,9 @@ public final class NewSwap {
     private static final String MACE_ITEM_NAME = "슈레더";
 
     private static boolean initialized = false;
-    private static boolean attackPressedLastTick = false;
-    private static int restoreSlot = PlayerInventory.NOT_FOUND;
+    private static boolean swapActive = false;
+    private static int sourceSlot = PlayerInventory.NOT_FOUND;
+    private static int maceSlot = PlayerInventory.NOT_FOUND;
 
     private NewSwap() {
     }
@@ -27,78 +28,116 @@ public final class NewSwap {
         }
         initialized = true;
 
-        ClientTickEvents.START_CLIENT_TICK.register(NewSwap::onStartTick);
-        ClientTickEvents.END_CLIENT_TICK.register(NewSwap::onEndTick);
+        ClientTickEvents.START_CLIENT_TICK.register(NewSwap::tick);
     }
 
-    private static void onStartTick(MinecraftClient client) {
-        boolean attackPressed = client != null
-                && client.options != null
-                && client.options.attackKey.isPressed();
-
+    private static void tick(MinecraftClient client) {
         if (client == null
                 || client.player == null
-                || client.currentScreen != null) {
-            attackPressedLastTick = attackPressed;
-            return;
-        }
-
-        if (attackPressed && !attackPressedLastTick) {
-            prepareSwap(client);
-        }
-
-        attackPressedLastTick = attackPressed;
-    }
-
-    private static void onEndTick(MinecraftClient client) {
-        restoreOriginalSlot(client);
-    }
-
-    private static void prepareSwap(MinecraftClient client) {
-        restoreOriginalSlot(client);
-
-        if (client.player == null || client.getNetworkHandler() == null) {
+                || client.getNetworkHandler() == null) {
+            clearState();
             return;
         }
 
         ClientPlayerEntity player = client.player;
+        PlayerInventory inventory = player.getInventory();
+
+        if (client.currentScreen != null) {
+            restoreSource(client, inventory);
+            return;
+        }
+
+        if (swapActive) {
+            updateActiveSwap(client, player, inventory);
+            return;
+        }
+
+        beginSwapIfReady(client, player, inventory);
+    }
+
+    private static void beginSwapIfReady(
+            MinecraftClient client,
+            ClientPlayerEntity player,
+            PlayerInventory inventory
+    ) {
+        int selectedSlot = inventory.selectedSlot;
+        if (!PlayerInventory.isValidHotbarIndex(selectedSlot)) {
+            return;
+        }
+
+        ItemStack selectedStack = inventory.getStack(selectedSlot);
+        if (!matches(selectedStack, Items.PRISMARINE_SHARD, SOURCE_ITEM_NAME)) {
+            return;
+        }
+
         if (!MaceItem.shouldDealAdditionalDamage(player)) {
             return;
         }
 
-        PlayerInventory inventory = player.getInventory();
-        int heldSlot = inventory.selectedSlot;
-        if (!PlayerInventory.isValidHotbarIndex(heldSlot)) {
+        int foundMaceSlot = findNamedMaceSlot(inventory);
+        if (!PlayerInventory.isValidHotbarIndex(foundMaceSlot)
+                || foundMaceSlot == selectedSlot) {
             return;
         }
 
-        ItemStack heldStack = inventory.getStack(heldSlot);
-        if (!matches(heldStack, Items.PRISMARINE_SHARD, SOURCE_ITEM_NAME)) {
-            return;
-        }
-
-        int maceSlot = findNamedMaceSlot(inventory);
-        if (!PlayerInventory.isValidHotbarIndex(maceSlot)
-                || maceSlot == heldSlot) {
-            return;
-        }
-
-        restoreSlot = heldSlot;
+        sourceSlot = selectedSlot;
+        maceSlot = foundMaceSlot;
+        swapActive = true;
         selectSlot(client, inventory, maceSlot);
     }
 
-    private static void restoreOriginalSlot(MinecraftClient client) {
-        int slot = restoreSlot;
-        restoreSlot = PlayerInventory.NOT_FOUND;
-
-        if (client == null
-                || client.player == null
-                || client.getNetworkHandler() == null
-                || !PlayerInventory.isValidHotbarIndex(slot)) {
+    private static void updateActiveSwap(
+            MinecraftClient client,
+            ClientPlayerEntity player,
+            PlayerInventory inventory
+    ) {
+        if (!isTrackedSourceValid(inventory) || !isTrackedMaceValid(inventory)) {
+            restoreSource(client, inventory);
             return;
         }
 
-        selectSlot(client, client.player.getInventory(), slot);
+        if (MaceItem.shouldDealAdditionalDamage(player)) {
+            if (inventory.selectedSlot != maceSlot) {
+                selectSlot(client, inventory, maceSlot);
+            }
+            return;
+        }
+
+        restoreSource(client, inventory);
+    }
+
+    private static void restoreSource(
+            MinecraftClient client,
+            PlayerInventory inventory
+    ) {
+        int slotToRestore = sourceSlot;
+        boolean canRestore = swapActive
+                && PlayerInventory.isValidHotbarIndex(slotToRestore)
+                && matches(
+                        inventory.getStack(slotToRestore),
+                        Items.PRISMARINE_SHARD,
+                        SOURCE_ITEM_NAME
+                );
+
+        clearState();
+
+        if (canRestore && inventory.selectedSlot != slotToRestore) {
+            selectSlot(client, inventory, slotToRestore);
+        }
+    }
+
+    private static boolean isTrackedSourceValid(PlayerInventory inventory) {
+        return PlayerInventory.isValidHotbarIndex(sourceSlot)
+                && matches(
+                        inventory.getStack(sourceSlot),
+                        Items.PRISMARINE_SHARD,
+                        SOURCE_ITEM_NAME
+                );
+    }
+
+    private static boolean isTrackedMaceValid(PlayerInventory inventory) {
+        return PlayerInventory.isValidHotbarIndex(maceSlot)
+                && matches(inventory.getStack(maceSlot), Items.MACE, MACE_ITEM_NAME);
     }
 
     private static int findNamedMaceSlot(PlayerInventory inventory) {
@@ -124,5 +163,11 @@ public final class NewSwap {
     ) {
         inventory.setSelectedSlot(slot);
         client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
+    }
+
+    private static void clearState() {
+        swapActive = false;
+        sourceSlot = PlayerInventory.NOT_FOUND;
+        maceSlot = PlayerInventory.NOT_FOUND;
     }
 }
