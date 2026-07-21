@@ -1,7 +1,11 @@
 package untitled.untitled.client;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.entity.Entity;
@@ -11,28 +15,29 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
-import net.minecraft.registry.Registries;
 import net.minecraft.text.Text;
 import net.minecraft.util.hit.EntityHitResult;
-import org.lwjgl.glfw.GLFW;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.Locale;
-import java.util.StringJoiner;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 public final class NewSwap {
-    private static final Logger LOGGER = LoggerFactory.getLogger("untitled/NewSwap");
-
-    private static final String LOG_PREFIX = "[NewSwapDebug] ";
     private static final String SOURCE_ITEM_NAME = "연";
     private static final String MACE_ITEM_NAME = "슈레더";
     private static final double MIN_LOCAL_DROP_DISTANCE = 1.5D;
 
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Path CONFIG_PATH = FabricLoader.getInstance()
+            .getConfigDir()
+            .resolve("untitled_newswap.json");
+
     private static boolean initialized = false;
-    private static boolean debugEnabled = true;
+    private static boolean enabled = true;
     private static boolean attackSwapActive = false;
     private static int sourceSlot = PlayerInventory.NOT_FOUND;
     private static int restoreDelayTicks = 0;
@@ -50,179 +55,93 @@ public final class NewSwap {
         }
         initialized = true;
 
+        loadSettings();
         ClientTickEvents.END_CLIENT_TICK.register(NewSwap::onEndClientTick);
         registerCommands();
-
-        LOGGER.info(
-                "{}initialized; debugEnabled=true; hook=Mouse#onMouseButton; heightMode=localHighestY",
-                LOG_PREFIX
-        );
     }
 
     private static void registerCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("newswapdebug")
-                        .executes(context -> {
-                            dumpStatus(MinecraftClient.getInstance(), true);
-                            return 1;
-                        })
-                        .then(literal("on").executes(context -> {
-                            debugEnabled = true;
-                            LOGGER.info("{}debug enabled by command", LOG_PREFIX);
-                            sendChat(MinecraftClient.getInstance(), "debug enabled");
-                            return 1;
-                        }))
-                        .then(literal("off").executes(context -> {
-                            LOGGER.info("{}debug disabled by command", LOG_PREFIX);
-                            debugEnabled = false;
-                            sendChat(MinecraftClient.getInstance(), "debug disabled");
+                dispatcher.register(literal("newswap")
+                        .then(literal("toggle").executes(context -> {
+                            MinecraftClient client = MinecraftClient.getInstance();
+                            enabled = !enabled;
+
+                            if (!enabled) {
+                                restoreSource(client);
+                                resetHeightTracking();
+                            } else {
+                                updateHeightTracking(client);
+                            }
+
+                            saveSettings();
+                            if (client.player != null) {
+                                client.player.sendMessage(
+                                        Text.literal("NewSwap: " + (enabled ? "ON" : "OFF")),
+                                        false
+                                );
+                            }
                             return 1;
                         })))
         );
     }
 
-    public static void onRawMouseButton(
-            MinecraftClient client,
-            long window,
-            int button,
-            int action,
-            int mods
-    ) {
-        if (action != GLFW.GLFW_PRESS) {
+    public static void onLeftMousePress(MinecraftClient client) {
+        if (!enabled || client == null) {
             return;
         }
 
-        long expectedWindow = client == null ? -1L : client.getWindow().getHandle();
-        debug(
-                "raw mouse press captured: initialized={}, window={}, expectedWindow={}, button={}, action={}, mods={}",
-                initialized,
-                window,
-                expectedWindow,
-                button,
-                action,
-                mods
-        );
-
-        if (button != GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            return;
-        }
-
-        if (client == null) {
-            block(null, "MinecraftClient is null");
-            return;
-        }
-
-        if (window != expectedWindow) {
-            block(client, "window handle mismatch: actual=" + window + ", expected=" + expectedWindow);
-            return;
-        }
-
-        onLeftMousePress(client);
-    }
-
-    private static void onLeftMousePress(MinecraftClient client) {
         updateHeightTracking(client);
-        restoreSource(client, "new left click started while an old swap was active");
-        dumpStatus(client, false);
+        restoreSource(client);
 
-        if (!initialized) {
-            block(client, "NewSwap.init() was not called");
-            return;
-        }
-        if (client.player == null) {
-            block(client, "client.player is null");
-            return;
-        }
-        if (client.getNetworkHandler() == null) {
-            block(client, "network handler is null");
-            return;
-        }
-        if (client.currentScreen != null) {
-            block(client, "screen is open: " + client.currentScreen.getClass().getSimpleName());
-            return;
-        }
-        if (client.player.isSpectator()) {
-            block(client, "player is spectator");
+        if (!initialized
+                || client.player == null
+                || client.getNetworkHandler() == null
+                || client.currentScreen != null
+                || client.player.isSpectator()) {
             return;
         }
 
         if (!(client.crosshairTarget instanceof EntityHitResult entityHitResult)) {
-            block(client, "crosshair is not an entity: " + describeCrosshair(client));
             return;
         }
 
         Entity target = entityHitResult.getEntity();
-        if (!(target instanceof LivingEntity livingTarget)) {
-            block(client, "target is not LivingEntity: " + describeEntity(target));
-            return;
-        }
-        if (!livingTarget.isAlive()) {
-            block(client, "target is not alive: " + describeEntity(target));
-            return;
-        }
-        if (target == client.player) {
-            block(client, "target is the local player");
+        if (!(target instanceof LivingEntity livingTarget)
+                || !livingTarget.isAlive()
+                || target == client.player) {
             return;
         }
 
         ClientPlayerEntity player = client.player;
         if (!isSmashReady(player)) {
-            block(client, String.format(
-                    Locale.ROOT,
-                    "smash condition failed: onGround=%s, velocityY=%.4f, currentY=%.3f, highestAirY=%.3f, localDropDistance=%.3f, requiredLocalDropDistance>%.3f, vanillaFallDistance=%.3f",
-                    player.isOnGround(),
-                    player.getVelocity().y,
-                    player.getY(),
-                    highestAirY,
-                    localDropDistance,
-                    MIN_LOCAL_DROP_DISTANCE,
-                    player.fallDistance
-            ));
             return;
         }
 
         PlayerInventory inventory = player.getInventory();
         int selectedSlot = inventory.selectedSlot;
         if (!PlayerInventory.isValidHotbarIndex(selectedSlot)) {
-            block(client, "selected slot is outside hotbar: " + selectedSlot);
             return;
         }
 
-        ItemStack heldStack = inventory.getStack(selectedSlot);
-        if (!matches(heldStack, Items.PRISMARINE_SHARD, SOURCE_ITEM_NAME)) {
-            block(client, "held item does not match source: slot=" + selectedSlot + ", " + describeStack(heldStack));
+        if (!matches(
+                inventory.getStack(selectedSlot),
+                Items.PRISMARINE_SHARD,
+                SOURCE_ITEM_NAME
+        )) {
             return;
         }
 
-        int foundMaceSlot = findNamedMaceSlot(inventory);
-        if (!PlayerInventory.isValidHotbarIndex(foundMaceSlot)) {
-            block(client, "named mace was not found in hotbar: " + describeHotbar(inventory));
-            return;
-        }
-        if (foundMaceSlot == selectedSlot) {
-            block(client, "source slot and mace slot are identical: " + selectedSlot);
+        int maceSlot = findNamedMaceSlot(inventory);
+        if (!PlayerInventory.isValidHotbarIndex(maceSlot)
+                || maceSlot == selectedSlot) {
             return;
         }
 
         sourceSlot = selectedSlot;
         attackSwapActive = true;
         restoreDelayTicks = 1;
-
-        debug(
-                "all conditions passed; swapping sourceSlot={} -> maceSlot={}; target={}; localDropDistance={}",
-                sourceSlot,
-                foundMaceSlot,
-                describeEntity(target),
-                localDropDistance
-        );
-        actionbar(client, String.format(
-                Locale.ROOT,
-                "PASS: swap %d -> %d, drop=%.2f",
-                sourceSlot,
-                foundMaceSlot,
-                localDropDistance
-        ));
-        selectSlot(client, inventory, foundMaceSlot, "swap to mace");
+        selectSlot(client, inventory, maceSlot);
     }
 
     private static boolean isSmashReady(ClientPlayerEntity player) {
@@ -245,7 +164,6 @@ public final class NewSwap {
             heightTrackedPlayer = player;
             highestAirY = currentY;
             localDropDistance = 0.0D;
-            debug("height tracking attached to player: currentY={}", currentY);
             return;
         }
 
@@ -269,23 +187,27 @@ public final class NewSwap {
     }
 
     private static void onEndClientTick(MinecraftClient client) {
+        if (!enabled) {
+            restoreSource(client);
+            resetHeightTracking();
+            return;
+        }
+
         updateHeightTracking(client);
 
         if (!attackSwapActive) {
             return;
         }
 
-        debug("end tick while swap active: restoreDelayTicks={}", restoreDelayTicks);
-
         if (restoreDelayTicks > 0) {
             restoreDelayTicks--;
             return;
         }
 
-        restoreSource(client, "restore delay elapsed");
+        restoreSource(client);
     }
 
-    private static void restoreSource(MinecraftClient client, String reason) {
+    private static void restoreSource(MinecraftClient client) {
         if (!attackSwapActive) {
             return;
         }
@@ -293,7 +215,6 @@ public final class NewSwap {
         if (client == null
                 || client.player == null
                 || client.getNetworkHandler() == null) {
-            debug("cannot restore source; clearing state; reason={}", reason);
             clearSwapState();
             return;
         }
@@ -307,27 +228,16 @@ public final class NewSwap {
                         SOURCE_ITEM_NAME
                 );
 
-        debug(
-                "restore requested: reason={}, slot={}, canRestore={}, currentSlot={}",
-                reason,
-                slotToRestore,
-                canRestore,
-                inventory.selectedSlot
-        );
         clearSwapState();
 
         if (canRestore && inventory.selectedSlot != slotToRestore) {
-            selectSlot(client, inventory, slotToRestore, "restore source item");
-            actionbar(client, "RESTORE: slot " + slotToRestore);
+            selectSlot(client, inventory, slotToRestore);
         }
     }
 
     private static int findNamedMaceSlot(PlayerInventory inventory) {
         for (int slot = 0; slot < PlayerInventory.getHotbarSize(); slot++) {
-            ItemStack stack = inventory.getStack(slot);
-            debug("hotbar scan slot={}: {}", slot, describeStack(stack));
-            if (matches(stack, Items.MACE, MACE_ITEM_NAME)) {
-                debug("named mace matched at slot={}", slot);
+            if (matches(inventory.getStack(slot), Items.MACE, MACE_ITEM_NAME)) {
                 return slot;
             }
         }
@@ -335,177 +245,53 @@ public final class NewSwap {
     }
 
     private static boolean matches(ItemStack stack, Item item, String exactName) {
-        if (stack == null || stack.isEmpty()) {
-            return false;
-        }
-
-        String actualName = stack.getName().getString().trim();
-        boolean itemMatches = stack.isOf(item);
-        boolean nameMatches = exactName.equals(actualName);
-
-        debug(
-                "item match check: expectedItem={}, actualItem={}, itemMatches={}, expectedName='{}', actualName='{}', actualNameCodePoints={}, nameMatches={}",
-                Registries.ITEM.getId(item),
-                Registries.ITEM.getId(stack.getItem()),
-                itemMatches,
-                exactName,
-                actualName,
-                codePoints(actualName),
-                nameMatches
-        );
-
-        return itemMatches && nameMatches;
+        return stack != null
+                && !stack.isEmpty()
+                && stack.isOf(item)
+                && exactName.equals(stack.getName().getString().trim());
     }
 
     private static void selectSlot(
             MinecraftClient client,
             PlayerInventory inventory,
-            int slot,
-            String reason
+            int slot
     ) {
-        int previousSlot = inventory.selectedSlot;
         inventory.setSelectedSlot(slot);
         client.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
-        debug("slot packet sent: {} -> {}, reason={}", previousSlot, slot, reason);
     }
 
-    private static void dumpStatus(MinecraftClient client, boolean sendToChat) {
-        updateHeightTracking(client);
+    private static void loadSettings() {
+        enabled = true;
 
-        String[] lines = buildStatusLines(client);
-        for (String line : lines) {
-            debug("STATUS {}", line);
-            if (sendToChat) {
-                sendChat(client, line);
-            }
-        }
-    }
-
-    private static String[] buildStatusLines(MinecraftClient client) {
-        if (client == null) {
-            return new String[]{"client=null, initialized=" + initialized + ", debugEnabled=" + debugEnabled};
-        }
-        if (client.player == null) {
-            return new String[]{
-                    "initialized=" + initialized + ", debugEnabled=" + debugEnabled,
-                    "player=null, network=" + (client.getNetworkHandler() != null),
-                    "crosshair=" + describeCrosshair(client)
-            };
-        }
-
-        ClientPlayerEntity player = client.player;
-        PlayerInventory inventory = player.getInventory();
-        int selectedSlot = inventory.selectedSlot;
-        ItemStack heldStack = PlayerInventory.isValidHotbarIndex(selectedSlot)
-                ? inventory.getStack(selectedSlot)
-                : ItemStack.EMPTY;
-        int maceSlot = findNamedMaceSlot(inventory);
-
-        return new String[]{
-                "initialized=" + initialized + ", debugEnabled=" + debugEnabled
-                        + ", swapActive=" + attackSwapActive + ", restoreDelayTicks=" + restoreDelayTicks,
-                "screen=" + (client.currentScreen == null
-                        ? "null"
-                        : client.currentScreen.getClass().getSimpleName())
-                        + ", network=" + (client.getNetworkHandler() != null)
-                        + ", spectator=" + player.isSpectator(),
-                "selectedSlot=" + selectedSlot + ", held=" + describeStack(heldStack),
-                String.format(
-                        Locale.ROOT,
-                        "movement: onGround=%s, velocityY=%.4f, currentY=%.3f, highestAirY=%.3f, localDropDistance=%.3f, vanillaFallDistance=%.3f, smashReady=%s",
-                        player.isOnGround(),
-                        player.getVelocity().y,
-                        player.getY(),
-                        highestAirY,
-                        localDropDistance,
-                        player.fallDistance,
-                        isSmashReady(player)
-                ),
-                "crosshair=" + describeCrosshair(client),
-                "foundMaceSlot=" + maceSlot + ", hotbar=" + describeHotbar(inventory)
-        };
-    }
-
-    private static String describeCrosshair(MinecraftClient client) {
-        if (client == null || client.crosshairTarget == null) {
-            return "null";
-        }
-        if (client.crosshairTarget instanceof EntityHitResult entityHitResult) {
-            return "ENTITY/" + describeEntity(entityHitResult.getEntity());
-        }
-        return client.crosshairTarget.getType()
-                + "/"
-                + client.crosshairTarget.getClass().getSimpleName();
-    }
-
-    private static String describeEntity(Entity entity) {
-        if (entity == null) {
-            return "null";
-        }
-        return Registries.ENTITY_TYPE.getId(entity.getType())
-                + "(" + entity.getClass().getSimpleName() + ")";
-    }
-
-    private static String describeStack(ItemStack stack) {
-        if (stack == null) {
-            return "null";
-        }
-        if (stack.isEmpty()) {
-            return "empty";
-        }
-
-        String name = stack.getName().getString();
-        return "item=" + Registries.ITEM.getId(stack.getItem())
-                + ", name='" + name + "'"
-                + ", trimmed='" + name.trim() + "'"
-                + ", codePoints=" + codePoints(name.trim())
-                + ", count=" + stack.getCount();
-    }
-
-    private static String describeHotbar(PlayerInventory inventory) {
-        StringJoiner joiner = new StringJoiner(", ", "[", "]");
-        for (int slot = 0; slot < PlayerInventory.getHotbarSize(); slot++) {
-            ItemStack stack = inventory.getStack(slot);
-            if (!stack.isEmpty()) {
-                joiner.add(slot + ":{" + describeStack(stack) + "}");
-            }
-        }
-        return joiner.toString();
-    }
-
-    private static String codePoints(String value) {
-        if (value == null || value.isEmpty()) {
-            return "[]";
-        }
-
-        StringJoiner joiner = new StringJoiner(" ", "[", "]");
-        value.codePoints().forEach(codePoint ->
-                joiner.add(String.format(Locale.ROOT, "U+%04X", codePoint))
-        );
-        return joiner.toString();
-    }
-
-    private static void block(MinecraftClient client, String reason) {
-        debug("BLOCK: {}", reason);
-        actionbar(client, "BLOCK: " + reason);
-    }
-
-    private static void actionbar(MinecraftClient client, String message) {
-        if (!debugEnabled || client == null || client.player == null) {
+        if (!Files.isRegularFile(CONFIG_PATH)) {
             return;
         }
-        client.player.sendMessage(Text.literal(LOG_PREFIX + message), true);
-    }
 
-    private static void sendChat(MinecraftClient client, String message) {
-        if (client != null && client.player != null) {
-            client.player.sendMessage(Text.literal(LOG_PREFIX + message), false);
+        try (Reader reader = Files.newBufferedReader(CONFIG_PATH)) {
+            JsonObject root = GSON.fromJson(reader, JsonObject.class);
+            if (root != null && root.has("enabled")) {
+                enabled = root.get("enabled").getAsBoolean();
+            }
+        } catch (Exception ignored) {
+            enabled = true;
         }
     }
 
-    private static void debug(String message, Object... arguments) {
-        if (debugEnabled) {
-            LOGGER.info(LOG_PREFIX + message, arguments);
+    private static void saveSettings() {
+        try {
+            Files.createDirectories(CONFIG_PATH.getParent());
+
+            JsonObject root = new JsonObject();
+            root.addProperty("enabled", enabled);
+
+            try (Writer writer = Files.newBufferedWriter(
+                    CONFIG_PATH,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING
+            )) {
+                GSON.toJson(root, writer);
+            }
+        } catch (Exception ignored) {
         }
     }
 
