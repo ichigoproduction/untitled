@@ -11,7 +11,8 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "untitled.untitled.client.UntitledClient"
+      "untitled.untitled.client.UntitledClient",
+      "untitled.untitled.client.NewSwapClient"
     ],
     "main": [
       "untitled.untitled.Untitled"

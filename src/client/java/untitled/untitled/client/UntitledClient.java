@@ -10,6 +10,5 @@ public class UntitledClient implements ClientModInitializer {
         PartyHud.init();
         CameraControl.init();
         FoodStack.init();
-        NewSwap.init();
     }
 }
