@@ -29,13 +29,17 @@ public final class NewSwap {
     private static final String LOG_PREFIX = "[NewSwapDebug] ";
     private static final String SOURCE_ITEM_NAME = "연";
     private static final String MACE_ITEM_NAME = "슈레더";
-    private static final float MIN_FALL_DISTANCE = 1.5F;
+    private static final double MIN_LOCAL_DROP_DISTANCE = 1.5D;
 
     private static boolean initialized = false;
     private static boolean debugEnabled = true;
     private static boolean attackSwapActive = false;
     private static int sourceSlot = PlayerInventory.NOT_FOUND;
     private static int restoreDelayTicks = 0;
+
+    private static ClientPlayerEntity heightTrackedPlayer = null;
+    private static double highestAirY = Double.NaN;
+    private static double localDropDistance = 0.0D;
 
     private NewSwap() {
     }
@@ -49,7 +53,10 @@ public final class NewSwap {
         ClientTickEvents.END_CLIENT_TICK.register(NewSwap::onEndClientTick);
         registerCommands();
 
-        LOGGER.info("{}initialized; debugEnabled=true; hook=Mouse#onMouseButton", LOG_PREFIX);
+        LOGGER.info(
+                "{}initialized; debugEnabled=true; hook=Mouse#onMouseButton; heightMode=localHighestY",
+                LOG_PREFIX
+        );
     }
 
     private static void registerCommands() {
@@ -114,6 +121,7 @@ public final class NewSwap {
     }
 
     private static void onLeftMousePress(MinecraftClient client) {
+        updateHeightTracking(client);
         restoreSource(client, "new left click started while an old swap was active");
         dumpStatus(client, false);
 
@@ -161,11 +169,14 @@ public final class NewSwap {
         if (!isSmashReady(player)) {
             block(client, String.format(
                     Locale.ROOT,
-                    "smash condition failed: onGround=%s, velocityY=%.4f, fallDistance=%.3f, requiredFallDistance>%.3f",
+                    "smash condition failed: onGround=%s, velocityY=%.4f, currentY=%.3f, highestAirY=%.3f, localDropDistance=%.3f, requiredLocalDropDistance>%.3f, vanillaFallDistance=%.3f",
                     player.isOnGround(),
                     player.getVelocity().y,
-                    player.fallDistance,
-                    MIN_FALL_DISTANCE
+                    player.getY(),
+                    highestAirY,
+                    localDropDistance,
+                    MIN_LOCAL_DROP_DISTANCE,
+                    player.fallDistance
             ));
             return;
         }
@@ -198,22 +209,68 @@ public final class NewSwap {
         restoreDelayTicks = 1;
 
         debug(
-                "all conditions passed; swapping sourceSlot={} -> maceSlot={}; target={}",
+                "all conditions passed; swapping sourceSlot={} -> maceSlot={}; target={}; localDropDistance={}",
                 sourceSlot,
                 foundMaceSlot,
-                describeEntity(target)
+                describeEntity(target),
+                localDropDistance
         );
-        actionbar(client, "PASS: swap " + sourceSlot + " -> " + foundMaceSlot);
+        actionbar(client, String.format(
+                Locale.ROOT,
+                "PASS: swap %d -> %d, drop=%.2f",
+                sourceSlot,
+                foundMaceSlot,
+                localDropDistance
+        ));
         selectSlot(client, inventory, foundMaceSlot, "swap to mace");
     }
 
     private static boolean isSmashReady(ClientPlayerEntity player) {
-        return !player.isOnGround()
-                && player.getVelocity().y < 0.0
-                && player.fallDistance > MIN_FALL_DISTANCE;
+        return player != null
+                && !player.isOnGround()
+                && player.getVelocity().y < 0.0D
+                && localDropDistance > MIN_LOCAL_DROP_DISTANCE;
+    }
+
+    private static void updateHeightTracking(MinecraftClient client) {
+        if (client == null || client.player == null) {
+            resetHeightTracking();
+            return;
+        }
+
+        ClientPlayerEntity player = client.player;
+        double currentY = player.getY();
+
+        if (heightTrackedPlayer != player) {
+            heightTrackedPlayer = player;
+            highestAirY = currentY;
+            localDropDistance = 0.0D;
+            debug("height tracking attached to player: currentY={}", currentY);
+            return;
+        }
+
+        if (player.isOnGround()) {
+            highestAirY = currentY;
+            localDropDistance = 0.0D;
+            return;
+        }
+
+        if (Double.isNaN(highestAirY) || currentY > highestAirY) {
+            highestAirY = currentY;
+        }
+
+        localDropDistance = Math.max(0.0D, highestAirY - currentY);
+    }
+
+    private static void resetHeightTracking() {
+        heightTrackedPlayer = null;
+        highestAirY = Double.NaN;
+        localDropDistance = 0.0D;
     }
 
     private static void onEndClientTick(MinecraftClient client) {
+        updateHeightTracking(client);
+
         if (!attackSwapActive) {
             return;
         }
@@ -237,7 +294,7 @@ public final class NewSwap {
                 || client.player == null
                 || client.getNetworkHandler() == null) {
             debug("cannot restore source; clearing state; reason={}", reason);
-            clearState();
+            clearSwapState();
             return;
         }
 
@@ -257,7 +314,7 @@ public final class NewSwap {
                 canRestore,
                 inventory.selectedSlot
         );
-        clearState();
+        clearSwapState();
 
         if (canRestore && inventory.selectedSlot != slotToRestore) {
             selectSlot(client, inventory, slotToRestore, "restore source item");
@@ -313,6 +370,8 @@ public final class NewSwap {
     }
 
     private static void dumpStatus(MinecraftClient client, boolean sendToChat) {
+        updateHeightTracking(client);
+
         String[] lines = buildStatusLines(client);
         for (String line : lines) {
             debug("STATUS {}", line);
@@ -353,9 +412,12 @@ public final class NewSwap {
                 "selectedSlot=" + selectedSlot + ", held=" + describeStack(heldStack),
                 String.format(
                         Locale.ROOT,
-                        "movement: onGround=%s, velocityY=%.4f, fallDistance=%.3f, smashReady=%s",
+                        "movement: onGround=%s, velocityY=%.4f, currentY=%.3f, highestAirY=%.3f, localDropDistance=%.3f, vanillaFallDistance=%.3f, smashReady=%s",
                         player.isOnGround(),
                         player.getVelocity().y,
+                        player.getY(),
+                        highestAirY,
+                        localDropDistance,
                         player.fallDistance,
                         isSmashReady(player)
                 ),
@@ -447,7 +509,7 @@ public final class NewSwap {
         }
     }
 
-    private static void clearState() {
+    private static void clearSwapState() {
         attackSwapActive = false;
         sourceSlot = PlayerInventory.NOT_FOUND;
         restoreDelayTicks = 0;
