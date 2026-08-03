@@ -1,4 +1,4 @@
-package untitled.untitled.client;
+package partyhud.client;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -18,12 +18,10 @@ import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.util.DefaultSkinHelper;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -53,31 +51,30 @@ public final class PartyHud {
     private static final int DY_COLOR = 0xFFBDC3C7;
     private static final int ARMOR_COLOR = 0xFFB7C7D9;
     private static final int MUTED = 0xFF8A8A8A;
-    private static final int SEPARATOR_COLOR = 0x35FFFFFF;
     private static final int SNEAK_COLOR = 0xFF7FE4FF;
-    private static final int ARROW_COLOR = 0xFFFFFFFF;
-    private static final int ARROW_COLOR_MUTED = 0x90AAAAAA;
+    private static final int PANEL_COLOR = 0x880A0D12;
+    private static final int BORDER_COLOR = 0x55FFFFFF;
+    private static final int SEPARATOR_COLOR = 0x35FFFFFF;
 
     private static final int HP_RED = 0xFFFF5A5A;
     private static final int HP_YELLOW = 0xFFFFD56A;
     private static final int HP_LIGHT_GREEN = 0xFFB9F6A5;
     private static final int HP_DARK_GREEN = 0xFF4FD37E;
 
-    private static final int MAX_ROWS_DETAIL = 7;
-    private static final int MAX_ROWS_COMPACT = 4;
-    private static final int ROW_GAP = 6;
-    private static final int COL_GAP = 14;
-    private static final int PAD_X = 10;
-    private static final int PAD_Y = 8;
+    private static final int ROW_GAP = 4;
+    private static final int COLUMN_GAP = 8;
+    private static final int PAD_X = 7;
+    private static final int PAD_Y = 6;
+    private static final int ICON_SIZE = 10;
     private static final int ICON_GAP = 5;
-    private static final int ARMOR_GAP = 5;
-    private static final int TEXT_VERTICAL_NUDGE = 1;
     private static final int SOFT_MARGIN = 2;
 
     private static final long LAST_SEEN_KEEP_MS = 15_000L;
     private static final long CLEANUP_INTERVAL_MS = 5_000L;
 
     private static final Map<UUID, LastSeen> LAST_SEEN = new HashMap<>();
+    private static final Map<UUID, Identifier> SKIN_CACHE = new HashMap<>();
+
     private static final List<Row> EDITOR_ROWS = List.of(
             Row.preview(
                     UUID.nameUUIDFromBytes("party-editor-one".getBytes(StandardCharsets.UTF_8)),
@@ -106,36 +103,21 @@ public final class PartyHud {
     private static boolean initialized = false;
     private static boolean loadingSettings = false;
     private static ViewMode viewMode = ViewMode.COMPACT;
-    private static long lastCleanupMs = 0L;
     private static int offsetX = 0;
     private static int offsetY = 0;
-    private static EditHud.HudBounds lastEditorBounds = new EditHud.HudBounds(0, 0, 1, 1);
+    private static long lastCleanupMs = 0L;
+    private static PartyHudEditor.HudBounds lastEditorBounds =
+            new PartyHudEditor.HudBounds(10, 30, 1, 1);
 
     private PartyHud() {
     }
 
     public static void init() {
-        if (initialized) {
-            return;
-        }
+        if (initialized) return;
         initialized = true;
 
         HudRenderCallback.EVENT.register(PartyHud::render);
         registerCommands();
-    }
-
-    public static void setModeDetail() {
-        viewMode = ViewMode.DETAIL;
-        saveSettings();
-    }
-
-    public static void setModeCompact() {
-        viewMode = ViewMode.COMPACT;
-        saveSettings();
-    }
-
-    public static ViewMode getMode() {
-        return viewMode;
     }
 
     static int getOffsetX() {
@@ -161,20 +143,24 @@ public final class PartyHud {
         offsetY = 0;
     }
 
-    static EditHud.HudBounds getEditorBounds() {
+    static PartyHudEditor.HudBounds getEditorBounds() {
         return lastEditorBounds;
     }
 
     static void renderEditorPreview(DrawContext context) {
-        RenderLayout layout = renderRows(context, EDITOR_ROWS);
+        RenderLayout layout = renderRows(context, EDITOR_ROWS, true);
         if (layout != null) {
-            lastEditorBounds = new EditHud.HudBounds(layout.x, layout.y, layout.width, layout.height);
+            lastEditorBounds = new PartyHudEditor.HudBounds(
+                    layout.x(), layout.y(), layout.width(), layout.height()
+            );
         }
     }
 
     static void writeSettings(JsonObject root) {
-        root.addProperty("partyViewMode", viewMode.name());
-        root.addProperty("partySortMode", Targeting.getSortMode().name());
+        root.addProperty("offsetX", offsetX);
+        root.addProperty("offsetY", offsetY);
+        root.addProperty("viewMode", viewMode.name());
+        root.addProperty("sortMode", Targeting.getSortMode().name());
 
         JsonArray targets = new JsonArray();
         for (Targeting.TargetInfo target : Targeting.all()) {
@@ -184,24 +170,27 @@ public final class PartyHud {
             item.addProperty("affinity", target.affinity.name());
             targets.add(item);
         }
-        root.add("partyTargets", targets);
+        root.add("targets", targets);
     }
 
     static void readSettings(JsonObject root) {
         loadingSettings = true;
         try {
-            if (root.has("partyViewMode")) {
+            offsetX = root.has("offsetX") ? root.get("offsetX").getAsInt() : 0;
+            offsetY = root.has("offsetY") ? root.get("offsetY").getAsInt() : 0;
+
+            if (root.has("viewMode")) {
                 try {
-                    viewMode = ViewMode.valueOf(root.get("partyViewMode").getAsString());
+                    viewMode = ViewMode.valueOf(root.get("viewMode").getAsString());
                 } catch (IllegalArgumentException ignored) {
                     viewMode = ViewMode.COMPACT;
                 }
             }
 
-            if (root.has("partySortMode")) {
+            if (root.has("sortMode")) {
                 try {
                     Targeting.sortMode = Targeting.SortMode.valueOf(
-                            root.get("partySortMode").getAsString()
+                            root.get("sortMode").getAsString()
                     );
                 } catch (IllegalArgumentException ignored) {
                     Targeting.sortMode = Targeting.SortMode.ORDER;
@@ -209,16 +198,12 @@ public final class PartyHud {
             }
 
             Targeting.TARGETS.clear();
-            if (root.has("partyTargets") && root.get("partyTargets").isJsonArray()) {
-                for (JsonElement element : root.getAsJsonArray("partyTargets")) {
-                    if (!element.isJsonObject() || Targeting.TARGETS.size() >= Targeting.MAXIMUM_TARGETS) {
-                        continue;
-                    }
+            if (root.has("targets") && root.get("targets").isJsonArray()) {
+                for (JsonElement element : root.getAsJsonArray("targets")) {
+                    if (!element.isJsonObject()) continue;
 
                     JsonObject item = element.getAsJsonObject();
-                    if (!item.has("uuid") || !item.has("name")) {
-                        continue;
-                    }
+                    if (!item.has("uuid") || !item.has("name")) continue;
 
                     try {
                         UUID uuid = UUID.fromString(item.get("uuid").getAsString());
@@ -251,7 +236,7 @@ public final class PartyHud {
 
     private static void saveSettings() {
         if (!loadingSettings) {
-            EditHud.saveSettings();
+            PartyHudEditor.saveSettings();
         }
     }
 
@@ -264,17 +249,16 @@ public final class PartyHud {
                                         .suggests((context, builder) -> {
                                             builder.suggest("team");
                                             builder.suggest("enemy");
+                                            builder.suggest("neutral");
                                             return builder.buildFuture();
                                         })
                                         .executes(context -> {
                                             String name = StringArgumentType.getString(context, "player");
                                             String role = StringArgumentType.getString(context, "role");
-                                            Targeting.Affinity affinity = role.equalsIgnoreCase("team")
-                                                    ? Targeting.Affinity.TEAM
-                                                    : role.equalsIgnoreCase("enemy")
-                                                    ? Targeting.Affinity.ENEMY
-                                                    : Targeting.Affinity.NEUTRAL;
-                                            return resultCode(Targeting.addOrEnsureByName(name, affinity));
+                                            return resultCode(Targeting.addOrEnsureByName(
+                                                    name,
+                                                    Targeting.Affinity.fromCommand(role)
+                                            ));
                                         }))
                                 .executes(context -> resultCode(Targeting.addOrEnsureByName(
                                         StringArgumentType.getString(context, "player")
@@ -295,30 +279,29 @@ public final class PartyHud {
                             return 1;
                         }))
                         .then(literal("sort")
+                                .then(literal("order").executes(context -> {
+                                    Targeting.setSortMode(Targeting.SortMode.ORDER);
+                                    return 1;
+                                }))
                                 .then(literal("distance").executes(context -> {
-                                    Targeting.setSortModeDistance();
-                                    beep(1.05F);
+                                    Targeting.setSortMode(Targeting.SortMode.DISTANCE);
                                     return 1;
                                 }))
                                 .then(literal("health").executes(context -> {
-                                    Targeting.setSortModeHealth();
-                                    beep(1.05F);
-                                    return 1;
-                                }))
-                                .then(literal("order").executes(context -> {
-                                    Targeting.setSortModeOrder();
-                                    beep(1.0F);
+                                    Targeting.setSortMode(Targeting.SortMode.HEALTH);
                                     return 1;
                                 })))
                         .then(literal("mode")
-                                .then(literal("detail").executes(context -> {
-                                    setModeDetail();
-                                    beep(1.0F);
+                                .then(literal("compact").executes(context -> {
+                                    viewMode = ViewMode.COMPACT;
+                                    saveSettings();
+                                    beep(1.1F);
                                     return 1;
                                 }))
-                                .then(literal("compact").executes(context -> {
-                                    setModeCompact();
-                                    beep(1.1F);
+                                .then(literal("detail").executes(context -> {
+                                    viewMode = ViewMode.DETAIL;
+                                    saveSettings();
+                                    beep(1.0F);
                                     return 1;
                                 })))
                 )
@@ -335,7 +318,7 @@ public final class PartyHud {
                 beep(1.0F);
                 yield 1;
             }
-            case FULL, NOT_FOUND -> {
+            case NOT_FOUND -> {
                 beep(0.9F);
                 yield 0;
             }
@@ -344,9 +327,7 @@ public final class PartyHud {
 
     private static void beep(float pitch) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) {
-            return;
-        }
+        if (client == null) return;
         client.getSoundManager().play(
                 PositionedSoundInstance.master(SoundEvents.UI_BUTTON_CLICK.value(), pitch, 1.0F)
         );
@@ -360,18 +341,12 @@ public final class PartyHud {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client != null && client.getNetworkHandler() != null) {
             for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
-                if (entry.getProfile() == null) {
-                    continue;
-                }
+                if (entry.getProfile() == null) continue;
                 String name = entry.getProfile().getName();
-                if (name != null && !name.isEmpty()) {
-                    names.add(name);
-                }
+                if (name != null && !name.isEmpty()) names.add(name);
             }
         }
-        if (client != null && client.player != null) {
-            names.add(client.player.getGameProfile().getName());
-        }
+
         for (Targeting.TargetInfo target : Targeting.all()) {
             names.add(target.name);
         }
@@ -398,351 +373,384 @@ public final class PartyHud {
 
     private static void render(DrawContext context, RenderTickCounter tickCounter) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.player == null || client.world == null) {
-            return;
-        }
-        if (client.currentScreen instanceof EditHud
-                || client.options.hudHidden
-                || Targeting.all().isEmpty()) {
-            return;
-        }
+        if (client == null || client.player == null || client.world == null) return;
+        if (client.currentScreen instanceof PartyHudEditor) return;
+        if (client.options.hudHidden || Targeting.all().isEmpty()) return;
 
         long now = System.currentTimeMillis();
-        if (now - lastCleanupMs > CLEANUP_INTERVAL_MS) {
-            cleanupOldEntries();
+        if (now - lastCleanupMs >= CLEANUP_INTERVAL_MS) {
+            cleanupOldEntries(now);
             lastCleanupMs = now;
         }
 
         float tickDelta = tickCounter.getTickDelta(false);
-        List<Row> rows = sortAndLimit(buildRows(client, tickDelta, now));
-        renderRows(context, rows);
+        List<Row> rows = buildRows(client, tickDelta, now);
+        sortRows(rows);
+        renderRows(context, rows, false);
     }
 
     private static List<Row> buildRows(MinecraftClient client, float tickDelta, long now) {
         Vec3d forward = client.player.getRotationVec(tickDelta);
-        double forwardX = forward.x;
-        double forwardZ = forward.z;
         List<Row> rows = new ArrayList<>();
 
         for (Targeting.TargetInfo target : Targeting.all()) {
-            UUID uuid = target.uuid;
-            PlayerEntity player = client.world.getPlayerByUuid(uuid);
-
+            PlayerEntity player = client.world.getPlayerByUuid(target.uuid);
             if (player != null) {
                 double dx = player.getX() - client.player.getX();
                 double dy = player.getY() - client.player.getY();
                 double dz = player.getZ() - client.player.getZ();
                 double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                double dot = forwardX * dx + forwardZ * dz;
-                double cross = forwardX * dz - forwardZ * dx;
-                double angle = Math.toDegrees(Math.atan2(cross, dot));
+                double angle = directionAngle(forward, dx, dz);
                 double health = player.getHealth() + player.getAbsorptionAmount();
-                boolean sneaking = player.isSneaking();
                 int armor = player.getArmor();
+                boolean sneaking = player.isSneaking();
 
-                Identifier skin = resolveLiveSkin(uuid);
-                cacheSkin(uuid, skin);
-                LAST_SEEN.put(uuid, new LastSeen(
+                Identifier skin = resolveSkin(client, target.uuid);
+                LAST_SEEN.put(target.uuid, new LastSeen(
                         player.getX(), player.getY(), player.getZ(), now, skin, sneaking
                 ));
 
                 rows.add(Row.live(
-                        uuid, target.name, target.affinity,
-                        distance, dy, health, angle, sneaking, armor
+                        target.uuid,
+                        target.name,
+                        target.affinity,
+                        distance,
+                        dy,
+                        health,
+                        angle,
+                        sneaking,
+                        armor
                 ));
                 continue;
             }
 
-            LastSeen memory = LAST_SEEN.get(uuid);
+            LastSeen memory = LAST_SEEN.get(target.uuid);
             if (memory == null) {
-                cacheSkin(uuid, null);
                 rows.add(Row.unloaded(
-                        uuid, target.name, target.affinity,
-                        Double.NaN, Double.NaN, Double.NaN,
-                        0.0, true, false, false, -1
+                        target.uuid,
+                        target.name,
+                        target.affinity,
+                        Double.NaN,
+                        Double.NaN,
+                        Double.NaN,
+                        0.0,
+                        true,
+                        false,
+                        -1
                 ));
                 continue;
             }
 
             long age = now - memory.timeMs;
             boolean stale = age > LAST_SEEN_KEEP_MS;
-            if (memory.skinId == null) {
-                memory.skinId = fallbackSkin(uuid);
-            }
-
             double distance = Double.NaN;
             double dy = Double.NaN;
             double angle = 0.0;
-            boolean showSneak = false;
 
             if (!stale) {
                 double dx = memory.x - client.player.getX();
                 dy = memory.y - client.player.getY();
                 double dz = memory.z - client.player.getZ();
                 distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                double dot = forwardX * dx + forwardZ * dz;
-                double cross = forwardX * dz - forwardZ * dx;
-                angle = Math.toDegrees(Math.atan2(cross, dot));
-                showSneak = memory.sneaking;
+                angle = directionAngle(forward, dx, dz);
             }
 
             rows.add(Row.unloaded(
-                    uuid, target.name, target.affinity,
-                    distance, dy, Double.NaN, angle,
-                    stale, showSneak, showSneak, -1
+                    target.uuid,
+                    target.name,
+                    target.affinity,
+                    distance,
+                    dy,
+                    Double.NaN,
+                    angle,
+                    stale,
+                    memory.sneaking,
+                    -1
             ));
         }
 
         return rows;
     }
 
-    private static List<Row> sortAndLimit(List<Row> source) {
-        List<Row> rows = new ArrayList<>(source);
-        if (Targeting.getSortMode() == Targeting.SortMode.DISTANCE) {
-            rows.sort(Comparator
-                    .comparing(Row::isUnloaded)
-                    .thenComparingDouble(row -> Double.isNaN(row.distance)
-                            ? Double.POSITIVE_INFINITY
-                            : row.distance));
-        } else if (Targeting.getSortMode() == Targeting.SortMode.HEALTH) {
-            rows.sort(Comparator
-                    .comparing(Row::isUnloaded)
-                    .thenComparingDouble(row -> Double.isNaN(row.health)
-                            ? Double.POSITIVE_INFINITY
-                            : row.health));
-        }
-
-        int maximum = viewMode == ViewMode.COMPACT ? MAX_ROWS_COMPACT : MAX_ROWS_DETAIL;
-        if (rows.size() > maximum) {
-            return new ArrayList<>(rows.subList(0, maximum));
-        }
-        return rows;
+    private static double directionAngle(Vec3d forward, double dx, double dz) {
+        double dot = forward.x * dx + forward.z * dz;
+        double cross = forward.x * dz - forward.z * dx;
+        return Math.toDegrees(Math.atan2(cross, dot));
     }
 
-    private static RenderLayout renderRows(DrawContext context, List<Row> rows) {
-        if (rows == null || rows.isEmpty()) {
-            return null;
-        }
+    private static void sortRows(List<Row> rows) {
+        Comparator<Row> comparator = switch (Targeting.getSortMode()) {
+            case ORDER -> null;
+            case DISTANCE -> Comparator.comparingDouble(row ->
+                    Double.isNaN(row.distance) ? Double.POSITIVE_INFINITY : row.distance
+            );
+            case HEALTH -> Comparator.comparingDouble(row ->
+                    Double.isNaN(row.health) ? Double.POSITIVE_INFINITY : row.health
+            );
+        };
+
+        if (comparator != null) rows.sort(comparator);
+    }
+
+    private static RenderLayout renderRows(DrawContext context, List<Row> rows, boolean editor) {
+        if (rows.isEmpty()) return null;
 
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null) {
-            return null;
-        }
-
         TextRenderer font = client.textRenderer;
-        int lineHeight = font.fontHeight;
-        int iconHeight = Math.max(8, lineHeight - 1);
-        int iconWidth = iconHeight;
-        int arrowBox = Math.max(14, lineHeight);
-        int nameSuffixWidth = font.getWidth("⏷") + 1;
-        int nameWidth = 0;
-        int distanceWidth = 0;
-        int deltaYWidth = 0;
-        int healthWidth = 0;
-        int armorWidth = viewMode == ViewMode.DETAIL
-                ? Math.max(font.getWidth("0"), font.getWidth("20"))
-                : 0;
+        int screenHeight = client.getWindow().getScaledHeight();
 
-        for (Row row : rows) {
-            nameWidth = Math.max(nameWidth, font.getWidth(row.name) + nameSuffixWidth);
-            distanceWidth = Math.max(distanceWidth, font.getWidth(
-                    viewMode == ViewMode.COMPACT ? row.distanceCompact() : row.distanceDetail()
-            ));
-            if (viewMode == ViewMode.DETAIL) {
-                deltaYWidth = Math.max(deltaYWidth, font.getWidth(row.deltaYText()));
-            }
-            healthWidth = Math.max(healthWidth, font.getWidth(row.healthText()));
-        }
+        int lineHeight = Math.max(font.fontHeight, ICON_SIZE);
+        int rowStep = lineHeight + ROW_GAP;
+        int baseX = 10 + offsetX;
+        int baseY = (editor ? 34 : 10) + offsetY;
 
-        int rowGap = viewMode == ViewMode.COMPACT ? 4 : ROW_GAP;
-        int columnGap = viewMode == ViewMode.COMPACT ? 8 : COL_GAP;
-        int nameColumnWidth;
-        int contentWidth;
+        int availableHeight = Math.max(
+                rowStep,
+                screenHeight - Math.max(0, baseY) - SOFT_MARGIN - PAD_Y * 2
+        );
+        int rowsPerColumn = Math.max(1, availableHeight / rowStep);
 
-        if (viewMode == ViewMode.DETAIL) {
-            nameColumnWidth = armorWidth + ARMOR_GAP + iconWidth + ICON_GAP + nameWidth;
-            contentWidth = nameColumnWidth
-                    + columnGap + distanceWidth
-                    + columnGap + deltaYWidth
-                    + columnGap + healthWidth
-                    + columnGap + arrowBox;
-        } else {
-            nameColumnWidth = iconWidth + ICON_GAP + nameWidth;
-            contentWidth = nameColumnWidth
-                    + columnGap + distanceWidth
-                    + columnGap + healthWidth
-                    + columnGap + arrowBox;
-        }
+        int currentX = baseX;
+        int maxBottom = baseY;
+        int totalRight = baseX;
 
-        int contentHeight = rows.size() * lineHeight + Math.max(0, rows.size() - 1) * rowGap;
-        int width = contentWidth + PAD_X * 2;
-        int height = contentHeight + PAD_Y * 2;
-        int screenWidth = context.getScaledWindowWidth();
-        int screenHeight = context.getScaledWindowHeight();
-        int x = (screenWidth - width) / 2 + offsetX;
-        int y = screenHeight - 60 + offsetY;
-        x = clampSoft(x, width, screenWidth, SOFT_MARGIN);
-        y = clampSoft(y, height, screenHeight, SOFT_MARGIN);
+        for (int start = 0; start < rows.size(); start += rowsPerColumn) {
+            int end = Math.min(rows.size(), start + rowsPerColumn);
+            List<Row> columnRows = rows.subList(start, end);
+            int columnWidth = calculateColumnWidth(font, columnRows);
+            int columnHeight = PAD_Y * 2 + columnRows.size() * rowStep - ROW_GAP;
 
-        int armorColumn = x + PAD_X;
-        int headColumn;
-        int nameColumn;
-        int distanceColumn;
-        int deltaYColumn = 0;
-        int healthColumn;
-        int arrowColumn;
-
-        if (viewMode == ViewMode.DETAIL) {
-            headColumn = armorColumn + armorWidth + ARMOR_GAP;
-            nameColumn = headColumn + iconWidth + ICON_GAP;
-            distanceColumn = x + PAD_X + nameColumnWidth + columnGap;
-            deltaYColumn = distanceColumn + distanceWidth + columnGap;
-            healthColumn = deltaYColumn + deltaYWidth + columnGap;
-            arrowColumn = healthColumn + healthWidth + columnGap;
-        } else {
-            headColumn = x + PAD_X;
-            nameColumn = headColumn + iconWidth + ICON_GAP;
-            distanceColumn = headColumn + nameColumnWidth + columnGap;
-            healthColumn = distanceColumn + distanceWidth + columnGap;
-            arrowColumn = healthColumn + healthWidth + columnGap;
-        }
-
-        for (int index = 0; index < rows.size(); index++) {
-            Row row = rows.get(index);
-            int rawY = y + PAD_Y + index * (lineHeight + rowGap);
-            int textY = rawY + TEXT_VERTICAL_NUDGE;
-            boolean unloaded = row.unloaded;
-
-            int baseNameColor = switch (row.affinity) {
-                case TEAM -> NAME_TEAM;
-                case ENEMY -> NAME_ENEMY;
-                case NEUTRAL -> NAME_IDLE;
-            };
-            int nameColor = unloaded ? MUTED : baseNameColor;
-            int distanceColor = unloaded ? MUTED : DIST_COLOR;
-            int deltaColor = unloaded ? MUTED : DY_COLOR;
-            int healthColor = unloaded || Double.isNaN(row.health) ? MUTED : healthColor(row.health);
-
-            if (viewMode == ViewMode.DETAIL) {
-                String armor = row.armorText();
-                int armorTextWidth = font.getWidth(armor);
-                drawColoredText(
-                        context,
-                        font,
-                        armor,
-                        armorColumn + Math.max(0, armorWidth - armorTextWidth),
-                        textY,
-                        unloaded ? MUTED : ARMOR_COLOR
-                );
-            }
-
-            drawHead(context, getSkinIdFor(row.uuid), headColumn, textY, iconWidth, iconHeight);
-            drawColoredText(context, font, row.name, nameColumn, textY, nameColor);
-            drawSneakSuffix(context, font, row, nameColumn, textY);
-            drawColoredText(
+            drawPanel(context, currentX, baseY, columnWidth, columnHeight);
+            drawColumnRows(
                     context,
                     font,
-                    viewMode == ViewMode.COMPACT ? row.distanceCompact() : row.distanceDetail(),
-                    distanceColumn,
-                    textY,
-                    distanceColor
+                    columnRows,
+                    currentX,
+                    baseY,
+                    columnWidth,
+                    lineHeight,
+                    rowStep
             );
 
-            if (viewMode == ViewMode.DETAIL) {
-                drawColoredText(context, font, row.deltaYText(), deltaYColumn, textY, deltaColor);
-            }
+            totalRight = currentX + columnWidth;
+            maxBottom = Math.max(maxBottom, baseY + columnHeight);
+            currentX += columnWidth + COLUMN_GAP;
+        }
 
-            drawColoredText(context, font, row.healthText(), healthColumn, textY, healthColor);
+        int width = Math.max(1, totalRight - baseX);
+        int height = Math.max(1, maxBottom - baseY);
+        return new RenderLayout(baseX, baseY, width, height);
+    }
 
-            int arrowY = textY + (lineHeight - arrowBox) / 2;
-            boolean self = client.player != null && row.uuid.equals(client.player.getUuid());
-            if (row.stale || self) {
-                drawDash(
-                        context,
-                        font,
-                        arrowColumn,
-                        arrowY,
-                        arrowBox,
-                        unloaded ? MUTED : DIST_COLOR
-                );
-            } else {
-                NeonArrow.drawRotated(
-                        context,
-                        arrowColumn,
-                        arrowY,
-                        arrowBox,
-                        arrowBox,
-                        row.angleDegrees,
-                        unloaded ? ARROW_COLOR_MUTED : ARROW_COLOR
-                );
-            }
+    private static int calculateColumnWidth(TextRenderer font, List<Row> rows) {
+        int maximum = 0;
+        for (Row row : rows) {
+            String line = buildLine(row);
+            maximum = Math.max(maximum, font.getWidth(line));
+        }
+        return PAD_X * 2 + ICON_SIZE + ICON_GAP + maximum;
+    }
+
+    private static void drawPanel(DrawContext context, int x, int y, int width, int height) {
+        context.fill(x, y, x + width, y + height, PANEL_COLOR);
+        context.fill(x, y, x + width, y + 1, BORDER_COLOR);
+        context.fill(x, y + height - 1, x + width, y + height, BORDER_COLOR);
+        context.fill(x, y, x + 1, y + height, BORDER_COLOR);
+        context.fill(x + width - 1, y, x + width, y + height, BORDER_COLOR);
+    }
+
+    private static void drawColumnRows(
+            DrawContext context,
+            TextRenderer font,
+            List<Row> rows,
+            int panelX,
+            int panelY,
+            int panelWidth,
+            int lineHeight,
+            int rowStep
+    ) {
+        for (int index = 0; index < rows.size(); index++) {
+            Row row = rows.get(index);
+            int rowY = panelY + PAD_Y + index * rowStep;
+            int iconY = rowY + Math.max(0, (lineHeight - ICON_SIZE) / 2);
+            int textX = panelX + PAD_X + ICON_SIZE + ICON_GAP;
+            int textY = rowY + Math.max(0, (lineHeight - font.fontHeight) / 2);
+
+            drawHead(
+                    context,
+                    getSkinId(row.uuid),
+                    panelX + PAD_X,
+                    iconY,
+                    ICON_SIZE,
+                    ICON_SIZE
+            );
+            drawRowText(context, font, row, textX, textY);
 
             if (index < rows.size() - 1) {
-                int separatorY = rawY + lineHeight + rowGap / 2;
+                int separatorY = rowY + lineHeight + ROW_GAP / 2;
                 context.fill(
-                        headColumn,
+                        panelX + PAD_X,
                         separatorY,
-                        Math.max(arrowColumn + arrowBox, headColumn + contentWidth),
+                        panelX + panelWidth - PAD_X,
                         separatorY + 1,
                         SEPARATOR_COLOR
                 );
             }
         }
-
-        return new RenderLayout(x, y, width, height);
     }
 
-    private static void drawColoredText(
+    private static String buildLine(Row row) {
+        if (viewMode == ViewMode.COMPACT) {
+            return row.name + (row.sneaking ? " [S]" : "")
+                    + "  " + row.distanceCompact()
+                    + "  " + row.healthText()
+                    + "  " + arrowFor(row);
+        }
+
+        return row.name + (row.sneaking ? " [S]" : "")
+                + "  D:" + row.distanceDetail()
+                + "  Y:" + row.deltaYText()
+                + "  HP:" + row.healthText()
+                + "  A:" + row.armorText()
+                + "  " + arrowFor(row);
+    }
+
+    private static void drawRowText(
+            DrawContext context,
+            TextRenderer font,
+            Row row,
+            int x,
+            int y
+    ) {
+        int nameColor = switch (row.affinity) {
+            case TEAM -> NAME_TEAM;
+            case ENEMY -> NAME_ENEMY;
+            case NEUTRAL -> NAME_IDLE;
+        };
+        if (row.unloaded) nameColor = MUTED;
+
+        int cursor = x;
+        cursor = drawText(context, font, row.name, cursor, y, nameColor);
+
+        if (row.sneaking) {
+            cursor = drawText(
+                    context,
+                    font,
+                    " [S]",
+                    cursor,
+                    y,
+                    row.unloaded ? MUTED : SNEAK_COLOR
+            );
+        }
+
+        if (viewMode == ViewMode.COMPACT) {
+            cursor = drawText(
+                    context,
+                    font,
+                    "  " + row.distanceCompact(),
+                    cursor,
+                    y,
+                    row.unloaded ? MUTED : DIST_COLOR
+            );
+            cursor = drawText(
+                    context,
+                    font,
+                    "  " + row.healthText(),
+                    cursor,
+                    y,
+                    row.unloaded ? MUTED : healthColor(row.health)
+            );
+            drawText(
+                    context,
+                    font,
+                    "  " + arrowFor(row),
+                    cursor,
+                    y,
+                    row.stale ? MUTED : DIST_COLOR
+            );
+            return;
+        }
+
+        cursor = drawText(
+                context,
+                font,
+                "  D:" + row.distanceDetail(),
+                cursor,
+                y,
+                row.unloaded ? MUTED : DIST_COLOR
+        );
+        cursor = drawText(
+                context,
+                font,
+                "  Y:" + row.deltaYText(),
+                cursor,
+                y,
+                row.unloaded ? MUTED : DY_COLOR
+        );
+        cursor = drawText(
+                context,
+                font,
+                "  HP:" + row.healthText(),
+                cursor,
+                y,
+                row.unloaded ? MUTED : healthColor(row.health)
+        );
+        cursor = drawText(
+                context,
+                font,
+                "  A:" + row.armorText(),
+                cursor,
+                y,
+                row.unloaded ? MUTED : ARMOR_COLOR
+        );
+        drawText(
+                context,
+                font,
+                "  " + arrowFor(row),
+                cursor,
+                y,
+                row.stale ? MUTED : DIST_COLOR
+        );
+    }
+
+    private static int drawText(
             DrawContext context,
             TextRenderer font,
             String value,
             int x,
             int y,
-            int argb
-    ) {
-        if (value == null || value.isEmpty()) {
-            return;
-        }
-        Text text = Text.literal(value).styled(style ->
-                style.withColor(TextColor.fromRgb(argb & 0xFFFFFF))
-        );
-        context.drawTextWithShadow(font, text, x, y, 0xFFFFFF);
-    }
-
-    private static void drawSneakSuffix(
-            DrawContext context,
-            TextRenderer font,
-            Row row,
-            int nameX,
-            int y
-    ) {
-        if (!row.sneaking || row.stale) {
-            return;
-        }
-        int color = row.sneakGhost ? dimRgb(SNEAK_COLOR, 0.6) : SNEAK_COLOR;
-        drawColoredText(context, font, "⏷", nameX + font.getWidth(row.name) + 1, y, color);
-    }
-
-    private static void drawDash(
-            DrawContext context,
-            TextRenderer font,
-            int x,
-            int y,
-            int size,
             int color
     ) {
-        String dash = "—";
-        int drawX = x + (size - font.getWidth(dash)) / 2;
-        int drawY = y + (size - font.fontHeight) / 2 + TEXT_VERTICAL_NUDGE;
-        drawColoredText(context, font, dash, drawX, drawY, color);
+        context.drawText(font, value, x, y, color, true);
+        return x + font.getWidth(value);
+    }
+
+    private static String arrowFor(Row row) {
+        if (row.stale || Double.isNaN(row.distance)) return "—";
+
+        double normalized = ((row.angleDegrees % 360.0) + 360.0) % 360.0;
+        int sector = (int) Math.round(normalized / 45.0) & 7;
+        return switch (sector) {
+            case 0 -> "↑";
+            case 1 -> "↖";
+            case 2 -> "←";
+            case 3 -> "↙";
+            case 4 -> "↓";
+            case 5 -> "↘";
+            case 6 -> "→";
+            default -> "↗";
+        };
     }
 
     private static int healthColor(double health) {
-        if (health <= 6.0) {
-            return HP_RED;
-        }
+        if (Double.isNaN(health)) return MUTED;
+        if (health <= 6.0) return HP_RED;
         if (health < 13.0) {
-            return lerpColor(HP_RED, HP_YELLOW, (float) ((health - 6.0) / 7.0));
+            return lerpColor(
+                    HP_RED,
+                    HP_YELLOW,
+                    (float) ((health - 6.0) / 7.0)
+            );
         }
         if (health < 21.0) {
             return lerpColor(
@@ -774,70 +782,41 @@ public final class PartyHud {
         return (alpha << 24) | (red << 16) | (green << 8) | blue;
     }
 
-    private static int multiplyAlpha(int argb, double factor) {
-        int alpha = (int) Math.round(((argb >>> 24) & 0xFF) * factor);
-        alpha = Math.max(0, Math.min(255, alpha));
-        return (alpha << 24) | (argb & 0x00FFFFFF);
-    }
+    private static Identifier resolveSkin(MinecraftClient client, UUID uuid) {
+        PlayerListEntry entry = client.getNetworkHandler() == null
+                ? null
+                : client.getNetworkHandler().getPlayerListEntry(uuid);
 
-    private static int dimRgb(int argb, double factor) {
-        factor = Math.max(0.0, Math.min(1.0, factor));
-        int alpha = (argb >>> 24) & 0xFF;
-        int red = (int) Math.round(((argb >>> 16) & 0xFF) * factor);
-        int green = (int) Math.round(((argb >>> 8) & 0xFF) * factor);
-        int blue = (int) Math.round((argb & 0xFF) * factor);
-        return (alpha << 24) | (red << 16) | (green << 8) | blue;
-    }
-
-    private static Identifier getSkinIdFor(UUID uuid) {
-        LastSeen memory = LAST_SEEN.get(uuid);
-        if (memory != null && memory.skinId != null) {
-            return memory.skinId;
-        }
-        Identifier live = resolveLiveSkin(uuid);
-        if (live != null) {
-            cacheSkin(uuid, live);
-            return live;
-        }
-        return fallbackSkin(uuid);
-    }
-
-    private static Identifier resolveLiveSkin(UUID uuid) {
-        try {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null && client.getNetworkHandler() != null) {
-                PlayerListEntry entry = client.getNetworkHandler().getPlayerListEntry(uuid);
-                if (entry != null
-                        && entry.getSkinTextures() != null
-                        && entry.getSkinTextures().texture() != null) {
-                    return entry.getSkinTextures().texture();
+        if (entry != null) {
+            try {
+                Identifier skin = entry.getSkinTextures().texture();
+                if (skin != null) {
+                    SKIN_CACHE.put(uuid, skin);
+                    return skin;
                 }
+            } catch (Throwable ignored) {
             }
-        } catch (Throwable ignored) {
         }
-        return null;
+
+        return getSkinId(uuid);
     }
 
-    private static void cacheSkin(UUID uuid, Identifier skin) {
+    private static Identifier getSkinId(UUID uuid) {
+        Identifier cached = SKIN_CACHE.get(uuid);
+        if (cached != null) return cached;
+
         LastSeen memory = LAST_SEEN.get(uuid);
-        if (memory == null) {
-            memory = new LastSeen(0.0, 0.0, 0.0, 0L, null, false);
-            LAST_SEEN.put(uuid, memory);
-        }
-        if (skin != null) {
-            memory.skinId = skin;
-        }
+        if (memory != null && memory.skinId != null) return memory.skinId;
+
+        Identifier fallback = fallbackSkin(uuid);
+        SKIN_CACHE.put(uuid, fallback);
+        return fallback;
     }
 
     private static Identifier fallbackSkin(UUID uuid) {
         try {
-            try {
-                java.lang.reflect.Method method =
-                        DefaultSkinHelper.class.getMethod("getTexture", UUID.class);
-                return (Identifier) method.invoke(null, uuid);
-            } catch (NoSuchMethodException ignored) {
-                return DefaultSkinHelper.getTexture();
-            }
+            Method method = DefaultSkinHelper.class.getMethod("getTexture", UUID.class);
+            return (Identifier) method.invoke(null, uuid);
         } catch (Throwable ignored) {
             return DefaultSkinHelper.getTexture();
         }
@@ -851,9 +830,8 @@ public final class PartyHud {
             int width,
             int height
     ) {
-        if (skin == null) {
-            return;
-        }
+        if (skin == null) return;
+
         context.drawTexture(
                 RenderLayer::getGuiTextured,
                 skin,
@@ -880,23 +858,15 @@ public final class PartyHud {
         );
     }
 
-    private static int clampSoft(int position, int size, int screen, int margin) {
-        int minimum = margin - size;
-        int maximum = screen - margin;
-        return Math.max(minimum, Math.min(maximum, position));
-    }
-
-    private static void cleanupOldEntries() {
-        long cutoff = System.currentTimeMillis() - LAST_SEEN_KEEP_MS * 2;
+    private static void cleanupOldEntries(long now) {
+        long cutoff = now - LAST_SEEN_KEEP_MS * 2;
         LAST_SEEN.entrySet().removeIf(entry ->
                 entry.getValue() == null || entry.getValue().timeMs < cutoff
         );
     }
 
-    private static String sanitizeNameForMatching(String value) {
-        if (value == null) {
-            return "";
-        }
+    private static String sanitizeName(String value) {
+        if (value == null) return "";
         return value
                 .replaceAll("^(\\s*\\[[^\\]]+\\]\\s*)+", "")
                 .replaceAll("§.", "")
@@ -905,25 +875,25 @@ public final class PartyHud {
     }
 
     private static void forget(UUID uuid) {
-        if (uuid != null) {
-            LAST_SEEN.remove(uuid);
-        }
+        LAST_SEEN.remove(uuid);
+        SKIN_CACHE.remove(uuid);
     }
 
     private static void forgetAll() {
         LAST_SEEN.clear();
+        SKIN_CACHE.clear();
     }
 
     private record RenderLayout(int x, int y, int width, int height) {
     }
 
     private static final class LastSeen {
-        double x;
-        double y;
-        double z;
-        long timeMs;
-        Identifier skinId;
-        boolean sneaking;
+        final double x;
+        final double y;
+        final double z;
+        final long timeMs;
+        final Identifier skinId;
+        final boolean sneaking;
 
         LastSeen(
                 double x,
@@ -953,7 +923,6 @@ public final class PartyHud {
         final double health;
         final double angleDegrees;
         final boolean sneaking;
-        final boolean sneakGhost;
         final int armor;
 
         private Row(
@@ -967,7 +936,6 @@ public final class PartyHud {
                 double health,
                 double angleDegrees,
                 boolean sneaking,
-                boolean sneakGhost,
                 int armor
         ) {
             this.uuid = uuid;
@@ -980,7 +948,6 @@ public final class PartyHud {
             this.health = health;
             this.angleDegrees = angleDegrees;
             this.sneaking = sneaking;
-            this.sneakGhost = sneakGhost;
             this.armor = armor;
         }
 
@@ -1006,7 +973,6 @@ public final class PartyHud {
                     health,
                     angleDegrees,
                     sneaking,
-                    false,
                     armor
             );
         }
@@ -1021,7 +987,6 @@ public final class PartyHud {
                 double angleDegrees,
                 boolean stale,
                 boolean sneaking,
-                boolean sneakGhost,
                 int armor
         ) {
             return new Row(
@@ -1035,7 +1000,6 @@ public final class PartyHud {
                     health,
                     angleDegrees,
                     sneaking,
-                    sneakGhost,
                     armor
             );
         }
@@ -1064,10 +1028,6 @@ public final class PartyHud {
             );
         }
 
-        boolean isUnloaded() {
-            return unloaded;
-        }
-
         String distanceDetail() {
             return Double.isNaN(distance)
                     ? "—"
@@ -1081,21 +1041,15 @@ public final class PartyHud {
         }
 
         String deltaYText() {
-            if (Double.isNaN(deltaY)) {
-                return "—";
-            }
+            if (Double.isNaN(deltaY)) return "—";
             long rounded = Math.round(deltaY);
             return (rounded > 0 ? "+" : "") + rounded;
         }
 
         String healthText() {
-            if (Double.isNaN(health)) {
-                return "—";
-            }
+            if (Double.isNaN(health)) return "—";
             String value = String.format(Locale.ROOT, "%.1f", health);
-            if (health <= 6.0) {
-                value += "!";
-            }
+            if (health <= 6.0) value += "!";
             return value + "♥";
         }
 
@@ -1114,19 +1068,25 @@ public final class PartyHud {
         public enum AddResult {
             ADDED,
             EXISTS,
-            FULL,
             NOT_FOUND
         }
 
         public enum Affinity {
             NEUTRAL,
             TEAM,
-            ENEMY
+            ENEMY;
+
+            static Affinity fromCommand(String value) {
+                if (value == null) return NEUTRAL;
+                return switch (value.toLowerCase(Locale.ROOT)) {
+                    case "team" -> TEAM;
+                    case "enemy" -> ENEMY;
+                    default -> NEUTRAL;
+                };
+            }
         }
 
-        private static final LinkedHashMap<UUID, TargetInfo> TARGETS =
-                new LinkedHashMap<>();
-        private static final int MAXIMUM_TARGETS = 7;
+        private static final LinkedHashMap<UUID, TargetInfo> TARGETS = new LinkedHashMap<>();
         private static SortMode sortMode = SortMode.ORDER;
 
         private Targeting() {
@@ -1142,10 +1102,8 @@ public final class PartyHud {
                 return AddResult.NOT_FOUND;
             }
 
-            String needle = sanitizeNameForMatching(rawName).toLowerCase(Locale.ROOT);
-            if (needle.isEmpty()) {
-                return AddResult.NOT_FOUND;
-            }
+            String needle = sanitizeName(rawName).toLowerCase(Locale.ROOT);
+            if (needle.isEmpty()) return AddResult.NOT_FOUND;
 
             for (TargetInfo target : TARGETS.values()) {
                 if (target.name.equalsIgnoreCase(needle)) {
@@ -1159,9 +1117,7 @@ public final class PartyHud {
             String foundName = null;
 
             for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
-                if (entry.getProfile() == null) {
-                    continue;
-                }
+                if (entry.getProfile() == null) continue;
 
                 String profileName = entry.getProfile().getName();
                 String profileLower = profileName == null
@@ -1169,9 +1125,7 @@ public final class PartyHud {
                         : profileName.toLowerCase(Locale.ROOT);
                 String displayLower = entry.getDisplayName() == null
                         ? ""
-                        : sanitizeNameForMatching(
-                                entry.getDisplayName().getString()
-                        ).toLowerCase(Locale.ROOT);
+                        : sanitizeName(entry.getDisplayName().getString()).toLowerCase(Locale.ROOT);
 
                 if (profileLower.equals(needle) || displayLower.equals(needle)) {
                     foundUuid = entry.getProfile().getId();
@@ -1182,9 +1136,7 @@ public final class PartyHud {
 
             if (foundUuid == null) {
                 for (PlayerListEntry entry : client.getNetworkHandler().getPlayerList()) {
-                    if (entry.getProfile() == null) {
-                        continue;
-                    }
+                    if (entry.getProfile() == null) continue;
 
                     String profileName = entry.getProfile().getName();
                     String profileLower = profileName == null
@@ -1192,9 +1144,7 @@ public final class PartyHud {
                             : profileName.toLowerCase(Locale.ROOT);
                     String displayLower = entry.getDisplayName() == null
                             ? ""
-                            : sanitizeNameForMatching(
-                                    entry.getDisplayName().getString()
-                            ).toLowerCase(Locale.ROOT);
+                            : sanitizeName(entry.getDisplayName().getString()).toLowerCase(Locale.ROOT);
 
                     if (profileLower.contains(needle) || displayLower.contains(needle)) {
                         foundUuid = entry.getProfile().getId();
@@ -1204,12 +1154,7 @@ public final class PartyHud {
                 }
             }
 
-            if (foundUuid == null) {
-                return AddResult.NOT_FOUND;
-            }
-            if (TARGETS.size() >= MAXIMUM_TARGETS) {
-                return AddResult.FULL;
-            }
+            if (foundUuid == null) return AddResult.NOT_FOUND;
 
             TARGETS.put(
                     foundUuid,
@@ -1224,10 +1169,8 @@ public final class PartyHud {
         }
 
         public static boolean removeByName(String rawName) {
-            String needle = sanitizeNameForMatching(rawName).toLowerCase(Locale.ROOT);
-            if (needle.isEmpty()) {
-                return false;
-            }
+            String needle = sanitizeName(rawName).toLowerCase(Locale.ROOT);
+            if (needle.isEmpty()) return false;
 
             UUID match = null;
             for (Map.Entry<UUID, TargetInfo> entry : TARGETS.entrySet()) {
@@ -1237,10 +1180,8 @@ public final class PartyHud {
                     break;
                 }
             }
-            if (match == null) {
-                return false;
-            }
 
+            if (match == null) return false;
             TARGETS.remove(match);
             forget(match);
             saveSettings();
@@ -1253,19 +1194,10 @@ public final class PartyHud {
             saveSettings();
         }
 
-        public static void setSortModeOrder() {
-            sortMode = SortMode.ORDER;
+        public static void setSortMode(SortMode mode) {
+            sortMode = mode == null ? SortMode.ORDER : mode;
             saveSettings();
-        }
-
-        public static void setSortModeDistance() {
-            sortMode = SortMode.DISTANCE;
-            saveSettings();
-        }
-
-        public static void setSortModeHealth() {
-            sortMode = SortMode.HEALTH;
-            saveSettings();
+            beep(1.05F);
         }
 
         public static SortMode getSortMode() {
@@ -1285,123 +1217,6 @@ public final class PartyHud {
                 this.uuid = uuid;
                 this.name = name;
                 this.affinity = affinity == null ? Affinity.NEUTRAL : affinity;
-            }
-        }
-    }
-
-    private static final class NeonArrow {
-        private NeonArrow() {
-        }
-
-        static void drawRotated(
-                DrawContext context,
-                int x,
-                int y,
-                int width,
-                int height,
-                double angleDegrees,
-                int argb
-        ) {
-            float centerX = x + width / 2.0F;
-            float centerY = y + height / 2.0F;
-            var matrices = context.getMatrices();
-            matrices.push();
-            matrices.translate(centerX, centerY, 0.0F);
-            matrices.multiply(
-                    RotationAxis.POSITIVE_Z.rotationDegrees((float) (angleDegrees - 90.0))
-            );
-            matrices.translate(-width / 2.0F, -height / 2.0F, 0.0F);
-
-            int coreThickness = Math.max(1, width / 12);
-            int outlineThickness = coreThickness + 1;
-            int coreColor = multiplyAlpha(argb, 0.75);
-            int outlineColor = 0xFF000000;
-
-            int firstX1 = Math.round(width * 0.25F);
-            int firstY1 = Math.round(height * 0.30F);
-            int tipX = Math.round(width * 0.75F);
-            int tipY = Math.round(height * 0.50F);
-            int secondX1 = Math.round(width * 0.25F);
-            int secondY1 = Math.round(height * 0.70F);
-
-            drawLineThick(
-                    context,
-                    firstX1,
-                    firstY1,
-                    tipX,
-                    tipY,
-                    outlineThickness,
-                    outlineColor
-            );
-            drawLineThick(
-                    context,
-                    secondX1,
-                    secondY1,
-                    tipX,
-                    tipY,
-                    outlineThickness,
-                    outlineColor
-            );
-            drawLineThick(
-                    context,
-                    firstX1,
-                    firstY1,
-                    tipX,
-                    tipY,
-                    coreThickness,
-                    coreColor
-            );
-            drawLineThick(
-                    context,
-                    secondX1,
-                    secondY1,
-                    tipX,
-                    tipY,
-                    coreThickness,
-                    coreColor
-            );
-            matrices.pop();
-        }
-
-        private static void drawLineThick(
-                DrawContext context,
-                int x1,
-                int y1,
-                int x2,
-                int y2,
-                int thickness,
-                int argb
-        ) {
-            int dx = Math.abs(x2 - x1);
-            int dy = Math.abs(y2 - y1);
-            int sx = x1 < x2 ? 1 : -1;
-            int sy = y1 < y2 ? 1 : -1;
-            int error = dx - dy;
-            int radius = Math.max(1, thickness / 2);
-            int x = x1;
-            int y = y1;
-
-            while (true) {
-                context.fill(
-                        x - radius,
-                        y - radius,
-                        x + radius + 1,
-                        y + radius + 1,
-                        argb
-                );
-                if (x == x2 && y == y2) {
-                    break;
-                }
-
-                int doubled = 2 * error;
-                if (doubled > -dy) {
-                    error -= dy;
-                    x += sx;
-                }
-                if (doubled < dx) {
-                    error += dx;
-                    y += sy;
-                }
             }
         }
     }

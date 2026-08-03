@@ -1,29 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "untitled",
+  "id": "partyhud",
   "version": "${version}",
-  "name": "untitled",
-  "description": "",
-  "authors": [],
-  "contact": {},
+  "name": "Party HUD",
+  "description": "Standalone unlimited party tracking HUD.",
+  "authors": ["ichigoproduction"],
   "license": "All-Rights-Reserved",
-  "icon": "assets/untitled/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [
-      "untitled.untitled.client.UntitledClient"
-    ],
-    "main": [
-      "untitled.untitled.Untitled"
+      "partyhud.client.PartyHudClient"
     ]
   },
-  "mixins": [
-    "untitled.mixins.json",
-    {
-      "config": "untitled.client.mixins.json",
-      "environment": "client"
-    }
-  ],
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
