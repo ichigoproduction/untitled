@@ -41,7 +41,7 @@ public final class PartyHudEditor extends Screen {
         super(Text.literal("Party HUD Editor"));
     }
 
-    public static void init() {
+    public static void register() {
         if (initialized) return;
         initialized = true;
 
