@@ -56,18 +56,20 @@ public final class EditHud extends Screen {
 
         loadSettings();
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(literal("party")
-                    .then(literal("edit").executes(context -> {
-                        requestOpen();
-                        return 1;
-                    })));
-            dispatcher.register(literal("fs")
-                    .then(literal("edit").executes(context -> {
-                        requestOpen();
-                        return 1;
-                    })));
-        });
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
+                dispatcher.register(literal("hud")
+                        .executes(context -> {
+                            openEditorDelayTicks = 2;
+                            return 1;
+                        })
+                        .then(literal("reset").executes(context -> {
+                            PartyHud.resetPosition();
+                            FoodStack.resetPosition();
+                            saveSettings();
+                            return 1;
+                        }))
+                )
+        );
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (openEditorDelayTicks < 0) {
@@ -84,10 +86,6 @@ public final class EditHud extends Screen {
                 client.setScreen(new EditHud());
             }
         });
-    }
-
-    private static void requestOpen() {
-        openEditorDelayTicks = 2;
     }
 
     @Override

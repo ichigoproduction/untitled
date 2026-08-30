@@ -6,6 +6,7 @@ public class UntitledClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         EditHud.register();
+        PartyHud.init();
         FoodStack.init();
     }
 }

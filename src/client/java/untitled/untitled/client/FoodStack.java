@@ -6,17 +6,13 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.message.v1.ClientSendMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.world.World;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -69,7 +65,6 @@ public final class FoodStack {
     private static long snapshotDedupeUntilMs = 0L;
     private static long snapshotEatSerial = 0L;
 
-    private static KeyBinding toggleKey;
     private static EditHud.HudBounds lastEditorBounds =
             new EditHud.HudBounds(0, 0, 1, 1);
 
@@ -81,13 +76,6 @@ public final class FoodStack {
             return;
         }
         initialized = true;
-
-        toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "Toggle FoodStack",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_UNKNOWN,
-                "untitled"
-        ));
 
         ClientReceiveMessageEvents.CHAT.register(
                 (message, signedMessage, sender, params, timestamp) ->
@@ -105,16 +93,6 @@ public final class FoodStack {
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             tickWorldChangeReset(client);
-
-            if (client == null) {
-                return;
-            }
-
-            while (toggleKey.wasPressed()) {
-                enabled = !enabled;
-                saveSettings();
-            }
-
             processLobbyResetTimers();
         });
     }
@@ -185,7 +163,6 @@ public final class FoodStack {
     private static void registerCommands(
             CommandDispatcher<FabricClientCommandSource> dispatcher
     ) {
-        registerRootCommand(dispatcher, "foodstack");
         registerRootCommand(dispatcher, "fs");
     }
 
