@@ -20,12 +20,14 @@ import java.nio.file.StandardOpenOption;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 public final class EditHud extends Screen {
-    private enum DragTarget {
-        NONE,
-        CONTENT,
-        PARTY,
-        FOOD_STACK
-    }
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Path CONFIG_PATH = FabricLoader.getInstance()
+            .getConfigDir()
+            .resolve("untitled_hud.json");
+
+    private static boolean initialized = false;
+    private static int openEditorDelayTicks = -1;
+    private boolean draggingParty = false;
 
     public record HudBounds(int x, int y, int width, int height) {
         public boolean contains(double mouseX, double mouseY) {
@@ -35,16 +37,6 @@ public final class EditHud extends Screen {
                     && mouseY < y + height;
         }
     }
-
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Path CONFIG_PATH = FabricLoader.getInstance()
-            .getConfigDir()
-            .resolve("untitled_hud.json");
-
-    private static boolean initialized = false;
-    private static int openEditorDelayTicks = -1;
-
-    private DragTarget dragTarget = DragTarget.NONE;
 
     private EditHud() {
         super(Text.empty());
@@ -65,9 +57,7 @@ public final class EditHud extends Screen {
                             return 1;
                         })
                         .then(literal("reset").executes(context -> {
-                            ContentTimer.resetPosition();
                             PartyHud.resetPosition();
-                            FoodStack.resetPosition();
                             saveSettings();
                             return 1;
                         }))
@@ -95,38 +85,14 @@ public final class EditHud extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0x88000000);
 
-        ContentTimer.renderEditorPreview(context);
         PartyHud.renderEditorPreview(context);
-        FoodStack.renderEditorPreview(context);
-
-        HudBounds contentBounds = ContentTimer.getEditorBounds();
         HudBounds partyBounds = PartyHud.getEditorBounds();
-        HudBounds foodStackBounds = FoodStack.getEditorBounds();
-
-        drawSelectionBox(
-                context,
-                contentBounds,
-                dragTarget == DragTarget.CONTENT || contentBounds.contains(mouseX, mouseY)
-        );
-        drawSelectionBox(
-                context,
-                partyBounds,
-                dragTarget == DragTarget.PARTY || partyBounds.contains(mouseX, mouseY)
-        );
-        drawSelectionBox(
-                context,
-                foodStackBounds,
-                dragTarget == DragTarget.FOOD_STACK || foodStackBounds.contains(mouseX, mouseY)
-        );
+        drawSelectionBox(context, partyBounds, draggingParty || partyBounds.contains(mouseX, mouseY));
 
         super.render(context, mouseX, mouseY, delta);
     }
 
-    private void drawSelectionBox(
-            DrawContext context,
-            HudBounds bounds,
-            boolean active
-    ) {
+    private void drawSelectionBox(DrawContext context, HudBounds bounds, boolean active) {
         int color = active ? 0xFFEAD075 : 0x99FFFFFF;
         int x1 = bounds.x() - 4;
         int y1 = bounds.y() - 4;
@@ -141,19 +107,9 @@ public final class EditHud extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0) {
-            if (ContentTimer.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.CONTENT;
-                return true;
-            }
-            if (PartyHud.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.PARTY;
-                return true;
-            }
-            if (FoodStack.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.FOOD_STACK;
-                return true;
-            }
+        if (button == 0 && PartyHud.getEditorBounds().contains(mouseX, mouseY)) {
+            draggingParty = true;
+            return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -166,17 +122,8 @@ public final class EditHud extends Screen {
             double deltaX,
             double deltaY
     ) {
-        if (button == 0 && dragTarget != DragTarget.NONE) {
-            int moveX = (int) Math.round(deltaX);
-            int moveY = (int) Math.round(deltaY);
-
-            if (dragTarget == DragTarget.CONTENT) {
-                ContentTimer.moveBy(moveX, moveY);
-            } else if (dragTarget == DragTarget.PARTY) {
-                PartyHud.moveBy(moveX, moveY);
-            } else if (dragTarget == DragTarget.FOOD_STACK) {
-                FoodStack.moveBy(moveX, moveY);
-            }
+        if (button == 0 && draggingParty) {
+            PartyHud.moveBy((int) Math.round(deltaX), (int) Math.round(deltaY));
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -184,8 +131,8 @@ public final class EditHud extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && dragTarget != DragTarget.NONE) {
-            dragTarget = DragTarget.NONE;
+        if (button == 0 && draggingParty) {
+            draggingParty = false;
             saveSettings();
             return true;
         }
@@ -214,12 +161,6 @@ public final class EditHud extends Screen {
                 return;
             }
 
-            int contentX = root.has("contentOffsetX")
-                    ? root.get("contentOffsetX").getAsInt()
-                    : 0;
-            int contentY = root.has("contentOffsetY")
-                    ? root.get("contentOffsetY").getAsInt()
-                    : 0;
             int partyX = root.has("partyOffsetX")
                     ? root.get("partyOffsetX").getAsInt()
                     : 0;
@@ -227,10 +168,8 @@ public final class EditHud extends Screen {
                     ? root.get("partyOffsetY").getAsInt()
                     : 0;
 
-            ContentTimer.setOffsets(contentX, contentY);
             PartyHud.setOffsets(partyX, partyY);
             PartyHud.readSettings(root);
-            FoodStack.readSettings(root);
         } catch (Exception ignored) {
         }
     }
@@ -240,12 +179,9 @@ public final class EditHud extends Screen {
             Files.createDirectories(CONFIG_PATH.getParent());
 
             JsonObject root = new JsonObject();
-            root.addProperty("contentOffsetX", ContentTimer.getOffsetX());
-            root.addProperty("contentOffsetY", ContentTimer.getOffsetY());
             root.addProperty("partyOffsetX", PartyHud.getOffsetX());
             root.addProperty("partyOffsetY", PartyHud.getOffsetY());
             PartyHud.writeSettings(root);
-            FoodStack.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
                     CONFIG_PATH,
