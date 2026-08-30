@@ -20,14 +20,20 @@ import java.nio.file.StandardOpenOption;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
 public final class EditHud extends Screen {
+    private enum DragTarget {
+        NONE,
+        PARTY,
+        FOOD_STACK
+    }
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_PATH = FabricLoader.getInstance()
             .getConfigDir()
-            .resolve("untitled_hud.json");
+            .resolve("152_hud.json");
 
     private static boolean initialized = false;
     private static int openEditorDelayTicks = -1;
-    private boolean draggingFoodStack = false;
+    private DragTarget dragTarget = DragTarget.NONE;
 
     public record HudBounds(int x, int y, int width, int height) {
         public boolean contains(double mouseX, double mouseY) {
@@ -50,19 +56,18 @@ public final class EditHud extends Screen {
 
         loadSettings();
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("hud")
-                        .executes(context -> {
-                            openEditorDelayTicks = 2;
-                            return 1;
-                        })
-                        .then(literal("reset").executes(context -> {
-                            FoodStack.resetPosition();
-                            saveSettings();
-                            return 1;
-                        }))
-                )
-        );
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(literal("party")
+                    .then(literal("edit").executes(context -> {
+                        requestOpen();
+                        return 1;
+                    })));
+            dispatcher.register(literal("fs")
+                    .then(literal("edit").executes(context -> {
+                        requestOpen();
+                        return 1;
+                    })));
+        });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (openEditorDelayTicks < 0) {
@@ -81,16 +86,29 @@ public final class EditHud extends Screen {
         });
     }
 
+    private static void requestOpen() {
+        openEditorDelayTicks = 2;
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0x88000000);
 
+        PartyHud.renderEditorPreview(context);
         FoodStack.renderEditorPreview(context);
+
+        HudBounds partyBounds = PartyHud.getEditorBounds();
         HudBounds foodStackBounds = FoodStack.getEditorBounds();
+
+        drawSelectionBox(
+                context,
+                partyBounds,
+                dragTarget == DragTarget.PARTY || partyBounds.contains(mouseX, mouseY)
+        );
         drawSelectionBox(
                 context,
                 foodStackBounds,
-                draggingFoodStack || foodStackBounds.contains(mouseX, mouseY)
+                dragTarget == DragTarget.FOOD_STACK || foodStackBounds.contains(mouseX, mouseY)
         );
 
         super.render(context, mouseX, mouseY, delta);
@@ -111,9 +129,15 @@ public final class EditHud extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && FoodStack.getEditorBounds().contains(mouseX, mouseY)) {
-            draggingFoodStack = true;
-            return true;
+        if (button == 0) {
+            if (PartyHud.getEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.PARTY;
+                return true;
+            }
+            if (FoodStack.getEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.FOOD_STACK;
+                return true;
+            }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -126,8 +150,15 @@ public final class EditHud extends Screen {
             double deltaX,
             double deltaY
     ) {
-        if (button == 0 && draggingFoodStack) {
-            FoodStack.moveBy((int) Math.round(deltaX), (int) Math.round(deltaY));
+        if (button == 0 && dragTarget != DragTarget.NONE) {
+            int moveX = (int) Math.round(deltaX);
+            int moveY = (int) Math.round(deltaY);
+
+            if (dragTarget == DragTarget.PARTY) {
+                PartyHud.moveBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.FOOD_STACK) {
+                FoodStack.moveBy(moveX, moveY);
+            }
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -135,8 +166,8 @@ public final class EditHud extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && draggingFoodStack) {
-            draggingFoodStack = false;
+        if (button == 0 && dragTarget != DragTarget.NONE) {
+            dragTarget = DragTarget.NONE;
             saveSettings();
             return true;
         }
@@ -165,6 +196,15 @@ public final class EditHud extends Screen {
                 return;
             }
 
+            int partyX = root.has("partyOffsetX")
+                    ? root.get("partyOffsetX").getAsInt()
+                    : 0;
+            int partyY = root.has("partyOffsetY")
+                    ? root.get("partyOffsetY").getAsInt()
+                    : 0;
+
+            PartyHud.setOffsets(partyX, partyY);
+            PartyHud.readSettings(root);
             FoodStack.readSettings(root);
         } catch (Exception ignored) {
         }
@@ -175,6 +215,9 @@ public final class EditHud extends Screen {
             Files.createDirectories(CONFIG_PATH.getParent());
 
             JsonObject root = new JsonObject();
+            root.addProperty("partyOffsetX", PartyHud.getOffsetX());
+            root.addProperty("partyOffsetY", PartyHud.getOffsetY());
+            PartyHud.writeSettings(root);
             FoodStack.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
