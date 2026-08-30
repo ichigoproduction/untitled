@@ -7,23 +7,12 @@
   "authors": [],
   "contact": {},
   "license": "All-Rights-Reserved",
-  "icon": "assets/untitled/icon.png",
   "environment": "client",
   "entrypoints": {
     "client": [
       "untitled.untitled.client.UntitledClient"
-    ],
-    "main": [
-      "untitled.untitled.Untitled"
     ]
   },
-  "mixins": [
-    "untitled.mixins.json",
-    {
-      "config": "untitled.client.mixins.json",
-      "environment": "client"
-    }
-  ],
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
