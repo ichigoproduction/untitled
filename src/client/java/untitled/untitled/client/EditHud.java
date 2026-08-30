@@ -27,7 +27,7 @@ public final class EditHud extends Screen {
 
     private static boolean initialized = false;
     private static int openEditorDelayTicks = -1;
-    private boolean draggingParty = false;
+    private boolean draggingFoodStack = false;
 
     public record HudBounds(int x, int y, int width, int height) {
         public boolean contains(double mouseX, double mouseY) {
@@ -57,7 +57,7 @@ public final class EditHud extends Screen {
                             return 1;
                         })
                         .then(literal("reset").executes(context -> {
-                            PartyHud.resetPosition();
+                            FoodStack.resetPosition();
                             saveSettings();
                             return 1;
                         }))
@@ -85,9 +85,13 @@ public final class EditHud extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0x88000000);
 
-        PartyHud.renderEditorPreview(context);
-        HudBounds partyBounds = PartyHud.getEditorBounds();
-        drawSelectionBox(context, partyBounds, draggingParty || partyBounds.contains(mouseX, mouseY));
+        FoodStack.renderEditorPreview(context);
+        HudBounds foodStackBounds = FoodStack.getEditorBounds();
+        drawSelectionBox(
+                context,
+                foodStackBounds,
+                draggingFoodStack || foodStackBounds.contains(mouseX, mouseY)
+        );
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -107,8 +111,8 @@ public final class EditHud extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && PartyHud.getEditorBounds().contains(mouseX, mouseY)) {
-            draggingParty = true;
+        if (button == 0 && FoodStack.getEditorBounds().contains(mouseX, mouseY)) {
+            draggingFoodStack = true;
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
@@ -122,8 +126,8 @@ public final class EditHud extends Screen {
             double deltaX,
             double deltaY
     ) {
-        if (button == 0 && draggingParty) {
-            PartyHud.moveBy((int) Math.round(deltaX), (int) Math.round(deltaY));
+        if (button == 0 && draggingFoodStack) {
+            FoodStack.moveBy((int) Math.round(deltaX), (int) Math.round(deltaY));
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -131,8 +135,8 @@ public final class EditHud extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && draggingParty) {
-            draggingParty = false;
+        if (button == 0 && draggingFoodStack) {
+            draggingFoodStack = false;
             saveSettings();
             return true;
         }
@@ -161,15 +165,7 @@ public final class EditHud extends Screen {
                 return;
             }
 
-            int partyX = root.has("partyOffsetX")
-                    ? root.get("partyOffsetX").getAsInt()
-                    : 0;
-            int partyY = root.has("partyOffsetY")
-                    ? root.get("partyOffsetY").getAsInt()
-                    : 0;
-
-            PartyHud.setOffsets(partyX, partyY);
-            PartyHud.readSettings(root);
+            FoodStack.readSettings(root);
         } catch (Exception ignored) {
         }
     }
@@ -179,9 +175,7 @@ public final class EditHud extends Screen {
             Files.createDirectories(CONFIG_PATH.getParent());
 
             JsonObject root = new JsonObject();
-            root.addProperty("partyOffsetX", PartyHud.getOffsetX());
-            root.addProperty("partyOffsetY", PartyHud.getOffsetY());
-            PartyHud.writeSettings(root);
+            FoodStack.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
                     CONFIG_PATH,
