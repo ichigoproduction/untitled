@@ -108,7 +108,6 @@ public final class FoodStack {
     static void setOffsets(int x, int y) {
         offsetX = x;
         offsetY = y;
-        clampOffsetsToScreen(MinecraftClient.getInstance());
     }
 
     static void moveBy(int deltaX, int deltaY) {
@@ -328,8 +327,6 @@ public final class FoodStack {
             return;
         }
 
-        clampOffsetsToScreen(client);
-
         RegistryKey<World> currentWorld = client.world.getRegistryKey();
         if (lastWorldKey == null || !lastWorldKey.equals(currentWorld)) {
             lastWorldKey = currentWorld;
@@ -390,8 +387,8 @@ public final class FoodStack {
             return new EditHud.HudBounds(0, 0, 1, 1);
         }
 
-        clampOffsetsToScreen(client);
         LayoutBox box = computeLayout(client, offsetX, offsetY, verticalLayout);
+        box = clampLayoutToScreen(client, box);
 
         for (int index = 0; index < DOTS; index++) {
             int x;
@@ -453,6 +450,37 @@ public final class FoodStack {
                 centerY,
                 totalWidth,
                 SEGMENT_HEIGHT
+        );
+    }
+
+    private static LayoutBox clampLayoutToScreen(
+            MinecraftClient client,
+            LayoutBox box
+    ) {
+        int screenWidth = client.getWindow().getScaledWidth();
+        int screenHeight = client.getWindow().getScaledHeight();
+
+        int x = box.startX;
+        int y = box.startY;
+
+        if (x < SCREEN_MARGIN) {
+            x = SCREEN_MARGIN;
+        }
+        if (x + box.totalWidth > screenWidth - SCREEN_MARGIN) {
+            x = screenWidth - SCREEN_MARGIN - box.totalWidth;
+        }
+        if (y < SCREEN_MARGIN) {
+            y = SCREEN_MARGIN;
+        }
+        if (y + box.totalHeight > screenHeight - SCREEN_MARGIN) {
+            y = screenHeight - SCREEN_MARGIN - box.totalHeight;
+        }
+
+        return new LayoutBox(
+                x,
+                y,
+                box.totalWidth,
+                box.totalHeight
         );
     }
 
