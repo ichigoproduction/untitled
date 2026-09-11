@@ -18,20 +18,26 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 public final class FoodStack {
-    private static final int DOTS = 3;
-    private static final int TRIGGER_EVERY = 4;
+    private static final int FOOD_SEGMENTS = 3;
+    private static final int FOOD_TRIGGER_EVERY = 4;
+    private static final int DRINK_SEGMENTS = 1;
+    private static final int DRINK_TRIGGER_EVERY = 2;
 
     private static final int SEGMENT_WIDTH = 10;
     private static final int SEGMENT_HEIGHT = 4;
     private static final int SEGMENT_GAP = 4;
     private static final int DEFAULT_Y_FROM_CROSSHAIR = 18;
+    private static final int DEFAULT_DRINK_OFFSET_Y = 10;
     private static final int SCREEN_MARGIN = 2;
 
     private static final int EMPTY_BACKGROUND = 0x44000000;
     private static final int EMPTY_EDGE = 0x66000000;
-    private static final int FILLED_BACKGROUND = 0xFFFF4DA6;
+    private static final int FOOD_FILLED_BACKGROUND = 0xFFFF4DA6;
+    private static final int DRINK_FILLED_BACKGROUND = 0xFF69C9FF;
     private static final int FILLED_HIGHLIGHT = 0x99FFFFFF;
 
+    private static final long DEDUPE_WINDOW_MS = 180L;
+    private static final long CONSUMPTION_CLASSIFY_WINDOW_MS = 1_000L;
     private static final long LOBBY_RESET_DELAY_MS = 180L;
     private static final long LOBBY_RETRY_WINDOW_MS = 5_000L;
     private static final long LOBBY_UNDO_WINDOW_MS = 5_000L;
@@ -41,18 +47,30 @@ public final class FoodStack {
     );
     private static final Pattern MINECRAFT_FORMAT = Pattern.compile("§[0-9A-FK-ORa-fk-or]");
 
-    private static boolean initialized = false;
-    private static boolean enabled = true;
-    private static boolean verticalLayout = false;
+    private enum ConsumptionType {
+        FOOD,
+        DRINK
+    }
 
-    private static int offsetX = 0;
-    private static int offsetY = 0;
-    private static int stack = 0;
+    private static boolean initialized = false;
+    private static boolean foodEnabled = true;
+    private static boolean drinkEnabled = true;
+    private static boolean foodVerticalLayout = false;
+
+    private static int foodOffsetX = 0;
+    private static int foodOffsetY = 0;
+    private static int drinkOffsetX = 0;
+    private static int drinkOffsetY = DEFAULT_DRINK_OFFSET_Y;
+
+    private static int foodStack = 0;
+    private static int drinkStack = 0;
 
     private static String lastSignal = "";
     private static long dedupeUntilMs = 0L;
+    private static String pendingConsumptionSignal = "";
+    private static long pendingConsumptionUntilMs = 0L;
     private static RegistryKey<World> lastWorldKey = null;
-    private static long eatSerial = 0L;
+    private static long consumptionSerial = 0L;
 
     private static long lastLobbyCommandMs = 0L;
     private static boolean lobbyResetPending = false;
@@ -60,12 +78,15 @@ public final class FoodStack {
     private static boolean lobbyUndoArmed = false;
     private static long lobbyUndoDeadlineMs = 0L;
 
-    private static int snapshotStack = 0;
+    private static int snapshotFoodStack = 0;
+    private static int snapshotDrinkStack = 0;
     private static String snapshotLastSignal = "";
     private static long snapshotDedupeUntilMs = 0L;
-    private static long snapshotEatSerial = 0L;
+    private static long snapshotConsumptionSerial = 0L;
 
-    private static EditHud.HudBounds lastEditorBounds =
+    private static EditHud.HudBounds lastFoodEditorBounds =
+            new EditHud.HudBounds(0, 0, 1, 1);
+    private static EditHud.HudBounds lastDrinkEditorBounds =
             new EditHud.HudBounds(0, 0, 1, 1);
 
     private FoodStack() {
@@ -94,65 +115,140 @@ public final class FoodStack {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             tickWorldChangeReset(client);
             processLobbyResetTimers();
+            processPendingConsumptionTimer();
         });
     }
 
-    static int getOffsetX() {
-        return offsetX;
+    static int getFoodOffsetX() {
+        return foodOffsetX;
     }
 
-    static int getOffsetY() {
-        return offsetY;
+    static int getFoodOffsetY() {
+        return foodOffsetY;
     }
 
-    static void setOffsets(int x, int y) {
-        offsetX = x;
-        offsetY = y;
+    static int getDrinkOffsetX() {
+        return drinkOffsetX;
     }
 
-    static void moveBy(int deltaX, int deltaY) {
-        offsetX += deltaX;
-        offsetY += deltaY;
-        clampOffsetsToScreen(MinecraftClient.getInstance());
+    static int getDrinkOffsetY() {
+        return drinkOffsetY;
     }
 
-    static void resetPosition() {
-        offsetX = 0;
-        offsetY = 0;
+    static void setFoodOffsets(int x, int y) {
+        foodOffsetX = x;
+        foodOffsetY = y;
     }
 
-    static EditHud.HudBounds getEditorBounds() {
-        return lastEditorBounds;
+    static void setDrinkOffsets(int x, int y) {
+        drinkOffsetX = x;
+        drinkOffsetY = y;
     }
 
-    static void renderEditorPreview(DrawContext context) {
-        lastEditorBounds = renderSegments(context, DOTS);
+    static void moveFoodBy(int deltaX, int deltaY) {
+        foodOffsetX += deltaX;
+        foodOffsetY += deltaY;
+
+        OffsetPair clamped = clampOffsetsToScreen(
+                MinecraftClient.getInstance(),
+                foodOffsetX,
+                foodOffsetY,
+                foodVerticalLayout,
+                FOOD_SEGMENTS
+        );
+        foodOffsetX = clamped.x;
+        foodOffsetY = clamped.y;
+    }
+
+    static void moveDrinkBy(int deltaX, int deltaY) {
+        drinkOffsetX += deltaX;
+        drinkOffsetY += deltaY;
+
+        OffsetPair clamped = clampOffsetsToScreen(
+                MinecraftClient.getInstance(),
+                drinkOffsetX,
+                drinkOffsetY,
+                false,
+                DRINK_SEGMENTS
+        );
+        drinkOffsetX = clamped.x;
+        drinkOffsetY = clamped.y;
+    }
+
+    static void resetPositions() {
+        foodOffsetX = 0;
+        foodOffsetY = 0;
+        drinkOffsetX = 0;
+        drinkOffsetY = DEFAULT_DRINK_OFFSET_Y;
+    }
+
+    static EditHud.HudBounds getFoodEditorBounds() {
+        return lastFoodEditorBounds;
+    }
+
+    static EditHud.HudBounds getDrinkEditorBounds() {
+        return lastDrinkEditorBounds;
+    }
+
+    static void renderFoodEditorPreview(DrawContext context) {
+        lastFoodEditorBounds = renderSegments(
+                context,
+                FOOD_SEGMENTS,
+                FOOD_SEGMENTS,
+                foodOffsetX,
+                foodOffsetY,
+                foodVerticalLayout,
+                FOOD_FILLED_BACKGROUND
+        );
+    }
+
+    static void renderDrinkEditorPreview(DrawContext context) {
+        lastDrinkEditorBounds = renderSegments(
+                context,
+                DRINK_SEGMENTS,
+                DRINK_SEGMENTS,
+                drinkOffsetX,
+                drinkOffsetY,
+                false,
+                DRINK_FILLED_BACKGROUND
+        );
     }
 
     static void writeSettings(JsonObject root) {
-        root.addProperty("foodStackEnabled", enabled);
-        root.addProperty("foodStackVertical", verticalLayout);
-        root.addProperty("foodStackOffsetX", offsetX);
-        root.addProperty("foodStackOffsetY", offsetY);
+        root.addProperty("foodStackEnabled", foodEnabled);
+        root.addProperty("foodStackVertical", foodVerticalLayout);
+        root.addProperty("foodStackOffsetX", foodOffsetX);
+        root.addProperty("foodStackOffsetY", foodOffsetY);
+
+        root.addProperty("drinkStackEnabled", drinkEnabled);
+        root.addProperty("drinkStackOffsetX", drinkOffsetX);
+        root.addProperty("drinkStackOffsetY", drinkOffsetY);
     }
 
     static void readSettings(JsonObject root) {
         if (root.has("foodStackEnabled")) {
-            enabled = root.get("foodStackEnabled").getAsBoolean();
+            foodEnabled = root.get("foodStackEnabled").getAsBoolean();
         }
         if (root.has("foodStackVertical")) {
-            verticalLayout = root.get("foodStackVertical").getAsBoolean();
+            foodVerticalLayout = root.get("foodStackVertical").getAsBoolean();
         }
 
-        int savedX = root.has("foodStackOffsetX")
+        foodOffsetX = root.has("foodStackOffsetX")
                 ? root.get("foodStackOffsetX").getAsInt()
                 : 0;
-        int savedY = root.has("foodStackOffsetY")
+        foodOffsetY = root.has("foodStackOffsetY")
                 ? root.get("foodStackOffsetY").getAsInt()
                 : 0;
 
-        offsetX = savedX;
-        offsetY = savedY;
+        if (root.has("drinkStackEnabled")) {
+            drinkEnabled = root.get("drinkStackEnabled").getAsBoolean();
+        }
+        drinkOffsetX = root.has("drinkStackOffsetX")
+                ? root.get("drinkStackOffsetX").getAsInt()
+                : 0;
+        drinkOffsetY = root.has("drinkStackOffsetY")
+                ? root.get("drinkStackOffsetY").getAsInt()
+                : DEFAULT_DRINK_OFFSET_Y;
     }
 
     private static void saveSettings() {
@@ -162,38 +258,58 @@ public final class FoodStack {
     private static void registerCommands(
             CommandDispatcher<FabricClientCommandSource> dispatcher
     ) {
-        registerRootCommand(dispatcher, "fs");
+        registerFoodCommand(dispatcher);
+        registerDrinkCommand(dispatcher);
     }
 
-    private static void registerRootCommand(
-            CommandDispatcher<FabricClientCommandSource> dispatcher,
-            String root
+    private static void registerFoodCommand(
+            CommandDispatcher<FabricClientCommandSource> dispatcher
     ) {
         dispatcher.register(
-                ClientCommandManager.literal(root)
+                ClientCommandManager.literal("fs")
                         .executes(context -> 1)
                         .then(ClientCommandManager.literal("reset")
                                 .executes(context -> {
-                                    manualReset();
+                                    resetFoodStack();
                                     return 1;
                                 }))
                         .then(ClientCommandManager.literal("toggle")
                                 .executes(context -> {
-                                    enabled = !enabled;
+                                    foodEnabled = !foodEnabled;
                                     saveSettings();
                                     return 1;
                                 }))
                         .then(ClientCommandManager.literal("horizontal")
                                 .executes(context -> {
-                                    verticalLayout = false;
-                                    clampOffsetsToScreen(MinecraftClient.getInstance());
+                                    foodVerticalLayout = false;
+                                    clampFoodOffsetsToScreen();
                                     saveSettings();
                                     return 1;
                                 }))
                         .then(ClientCommandManager.literal("vertical")
                                 .executes(context -> {
-                                    verticalLayout = true;
-                                    clampOffsetsToScreen(MinecraftClient.getInstance());
+                                    foodVerticalLayout = true;
+                                    clampFoodOffsetsToScreen();
+                                    saveSettings();
+                                    return 1;
+                                }))
+        );
+    }
+
+    private static void registerDrinkCommand(
+            CommandDispatcher<FabricClientCommandSource> dispatcher
+    ) {
+        dispatcher.register(
+                ClientCommandManager.literal("ds")
+                        .executes(context -> 1)
+                        .then(ClientCommandManager.literal("reset")
+                                .executes(context -> {
+                                    resetDrinkStack();
+                                    return 1;
+                                }))
+                        .then(ClientCommandManager.literal("toggle")
+                                .executes(context -> {
+                                    drinkEnabled = !drinkEnabled;
                                     saveSettings();
                                     return 1;
                                 }))
@@ -224,10 +340,11 @@ public final class FoodStack {
     private static void scheduleLobbyReset() {
         long now = System.currentTimeMillis();
 
-        snapshotStack = stack;
+        snapshotFoodStack = foodStack;
+        snapshotDrinkStack = drinkStack;
         snapshotLastSignal = lastSignal;
         snapshotDedupeUntilMs = dedupeUntilMs;
-        snapshotEatSerial = eatSerial;
+        snapshotConsumptionSerial = consumptionSerial;
 
         lastLobbyCommandMs = now;
         lobbyResetPending = true;
@@ -245,7 +362,7 @@ public final class FoodStack {
         }
 
         if (lobbyResetPending && now >= lobbyResetDueMs) {
-            resetCore();
+            resetAllStacks();
             lobbyResetPending = false;
             lobbyUndoArmed = true;
             lobbyUndoDeadlineMs = now + LOBBY_UNDO_WINDOW_MS;
@@ -259,13 +376,17 @@ public final class FoodStack {
         }
     }
 
+    private static void processPendingConsumptionTimer() {
+        if (!pendingConsumptionSignal.isEmpty()
+                && System.currentTimeMillis() > pendingConsumptionUntilMs) {
+            clearPendingConsumption();
+        }
+    }
+
     private static void onIncomingMessage(String raw) {
         String clean = normalize(raw);
         handleRetryMessage(clean);
-
-        if (clean.contains("먹은 음식:")) {
-            onFoodMessage(clean);
-        }
+        handleConsumptionMessage(clean);
     }
 
     private static void handleRetryMessage(String clean) {
@@ -283,39 +404,79 @@ public final class FoodStack {
         }
 
         if (lobbyUndoArmed && now <= lobbyUndoDeadlineMs) {
-            if (eatSerial == snapshotEatSerial) {
+            if (consumptionSerial == snapshotConsumptionSerial) {
                 restoreSnapshot();
             }
             lobbyUndoArmed = false;
         }
     }
 
-    private static void onFoodMessage(String raw) {
-        int index = raw.indexOf("먹은 음식:");
-        if (index < 0) {
+    private static void handleConsumptionMessage(String clean) {
+        long now = System.currentTimeMillis();
+        ConsumptionType type = classifyConsumption(clean);
+        boolean hasConsumedFoodHeader = clean.contains("먹은 음식:");
+
+        if (hasConsumedFoodHeader) {
+            if (type != null) {
+                clearPendingConsumption();
+                applyConsumption(type, clean, now);
+            } else {
+                pendingConsumptionSignal = clean;
+                pendingConsumptionUntilMs = now + CONSUMPTION_CLASSIFY_WINDOW_MS;
+            }
             return;
         }
 
-        String food = raw.substring(index + "먹은 음식:".length()).trim();
-        if (food.isEmpty()) {
-            food = "?";
+        if (type != null
+                && !pendingConsumptionSignal.isEmpty()
+                && now <= pendingConsumptionUntilMs) {
+            String signalSource = pendingConsumptionSignal;
+            clearPendingConsumption();
+            applyConsumption(type, signalSource, now);
         }
+    }
 
-        String signal = "EAT|" + food;
-        long now = System.currentTimeMillis();
+    private static ConsumptionType classifyConsumption(String clean) {
+        boolean thirst = clean.contains("갈증:");
+        boolean hunger = clean.contains("허기:");
 
+        if (thirst == hunger) {
+            return null;
+        }
+        return thirst ? ConsumptionType.DRINK : ConsumptionType.FOOD;
+    }
+
+    private static void applyConsumption(
+            ConsumptionType type,
+            String signalSource,
+            long now
+    ) {
+        String signal = type.name() + "|" + signalSource;
         if (signal.equals(lastSignal) && now < dedupeUntilMs) {
             return;
         }
 
         lastSignal = signal;
-        dedupeUntilMs = now + 180L;
-        eatSerial++;
+        dedupeUntilMs = now + DEDUPE_WINDOW_MS;
+        consumptionSerial++;
 
-        int next = stack + 1;
-        stack = next >= TRIGGER_EVERY
+        if (type == ConsumptionType.DRINK) {
+            drinkStack = nextStack(drinkStack, DRINK_TRIGGER_EVERY, DRINK_SEGMENTS);
+        } else {
+            foodStack = nextStack(foodStack, FOOD_TRIGGER_EVERY, FOOD_SEGMENTS);
+        }
+    }
+
+    private static int nextStack(int current, int triggerEvery, int visibleSegments) {
+        int next = current + 1;
+        return next >= triggerEvery
                 ? 0
-                : Math.min(next, DOTS);
+                : Math.min(next, visibleSegments);
+    }
+
+    private static void clearPendingConsumption() {
+        pendingConsumptionSignal = "";
+        pendingConsumptionUntilMs = 0L;
     }
 
     private static void tickWorldChangeReset(MinecraftClient client) {
@@ -324,33 +485,46 @@ public final class FoodStack {
             lobbyResetPending = false;
             lobbyUndoArmed = false;
             lastLobbyCommandMs = 0L;
+            clearPendingConsumption();
             return;
         }
 
         RegistryKey<World> currentWorld = client.world.getRegistryKey();
         if (lastWorldKey == null || !lastWorldKey.equals(currentWorld)) {
             lastWorldKey = currentWorld;
-            manualReset();
+            manualResetAll();
         }
     }
 
-    public static void manualReset() {
+    private static void resetFoodStack() {
+        foodStack = 0;
+    }
+
+    private static void resetDrinkStack() {
+        drinkStack = 0;
+    }
+
+    private static void manualResetAll() {
         lobbyResetPending = false;
         lobbyUndoArmed = false;
         lastLobbyCommandMs = 0L;
-        resetCore();
+        resetAllStacks();
     }
 
-    private static void resetCore() {
-        stack = 0;
+    private static void resetAllStacks() {
+        foodStack = 0;
+        drinkStack = 0;
         lastSignal = "";
         dedupeUntilMs = 0L;
+        clearPendingConsumption();
     }
 
     private static void restoreSnapshot() {
-        stack = snapshotStack;
+        foodStack = snapshotFoodStack;
+        drinkStack = snapshotDrinkStack;
         lastSignal = snapshotLastSignal;
         dedupeUntilMs = snapshotDedupeUntilMs;
+        clearPendingConsumption();
     }
 
     private static String normalize(String value) {
@@ -370,33 +544,65 @@ public final class FoodStack {
                 || client.player == null
                 || client.world == null
                 || client.options.hudHidden
-                || client.currentScreen instanceof EditHud
-                || !enabled) {
+                || client.currentScreen instanceof EditHud) {
             return;
         }
 
-        renderSegments(context, stack);
+        if (foodEnabled) {
+            renderSegments(
+                    context,
+                    FOOD_SEGMENTS,
+                    foodStack,
+                    foodOffsetX,
+                    foodOffsetY,
+                    foodVerticalLayout,
+                    FOOD_FILLED_BACKGROUND
+            );
+        }
+
+        if (drinkEnabled) {
+            renderSegments(
+                    context,
+                    DRINK_SEGMENTS,
+                    drinkStack,
+                    drinkOffsetX,
+                    drinkOffsetY,
+                    false,
+                    DRINK_FILLED_BACKGROUND
+            );
+        }
     }
 
     private static EditHud.HudBounds renderSegments(
             DrawContext context,
-            int filledSegments
+            int segmentCount,
+            int filledSegments,
+            int horizontalOffset,
+            int verticalOffset,
+            boolean vertical,
+            int filledBackground
     ) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) {
             return new EditHud.HudBounds(0, 0, 1, 1);
         }
 
-        LayoutBox box = computeLayout(client, offsetX, offsetY, verticalLayout);
+        LayoutBox box = computeLayout(
+                client,
+                horizontalOffset,
+                verticalOffset,
+                vertical,
+                segmentCount
+        );
         box = clampLayoutToScreen(client, box);
 
-        for (int index = 0; index < DOTS; index++) {
+        for (int index = 0; index < segmentCount; index++) {
             int x;
             int y;
 
-            if (verticalLayout) {
+            if (vertical) {
                 x = box.startX;
-                y = box.startY + (DOTS - 1 - index) * (SEGMENT_HEIGHT + SEGMENT_GAP);
+                y = box.startY + (segmentCount - 1 - index) * (SEGMENT_HEIGHT + SEGMENT_GAP);
             } else {
                 x = box.startX + index * (SEGMENT_WIDTH + SEGMENT_GAP);
                 y = box.startY;
@@ -407,7 +613,7 @@ public final class FoodStack {
             boolean filled = index < filledSegments;
 
             context.fill(x - 1, y - 1, x2 + 1, y2 + 1, EMPTY_EDGE);
-            context.fill(x, y, x2, y2, filled ? FILLED_BACKGROUND : EMPTY_BACKGROUND);
+            context.fill(x, y, x2, y2, filled ? filledBackground : EMPTY_BACKGROUND);
 
             if (filled) {
                 context.fill(x, y, x2, y + 1, FILLED_HIGHLIGHT);
@@ -426,7 +632,8 @@ public final class FoodStack {
             MinecraftClient client,
             int horizontalOffset,
             int verticalOffset,
-            boolean vertical
+            boolean vertical,
+            int segmentCount
     ) {
         int screenWidth = client.getWindow().getScaledWidth();
         int screenHeight = client.getWindow().getScaledHeight();
@@ -435,7 +642,8 @@ public final class FoodStack {
         int centerY = screenHeight / 2 + verticalOffset + DEFAULT_Y_FROM_CROSSHAIR;
 
         if (vertical) {
-            int totalHeight = DOTS * SEGMENT_HEIGHT + (DOTS - 1) * SEGMENT_GAP;
+            int totalHeight = segmentCount * SEGMENT_HEIGHT
+                    + (segmentCount - 1) * SEGMENT_GAP;
             return new LayoutBox(
                     centerX - SEGMENT_WIDTH / 2,
                     centerY,
@@ -444,7 +652,8 @@ public final class FoodStack {
             );
         }
 
-        int totalWidth = DOTS * SEGMENT_WIDTH + (DOTS - 1) * SEGMENT_GAP;
+        int totalWidth = segmentCount * SEGMENT_WIDTH
+                + (segmentCount - 1) * SEGMENT_GAP;
         return new LayoutBox(
                 centerX - totalWidth / 2,
                 centerY,
@@ -484,27 +693,59 @@ public final class FoodStack {
         );
     }
 
-    private static void clampOffsetsToScreen(MinecraftClient client) {
+    private static void clampFoodOffsetsToScreen() {
+        OffsetPair clamped = clampOffsetsToScreen(
+                MinecraftClient.getInstance(),
+                foodOffsetX,
+                foodOffsetY,
+                foodVerticalLayout,
+                FOOD_SEGMENTS
+        );
+        foodOffsetX = clamped.x;
+        foodOffsetY = clamped.y;
+    }
+
+    private static OffsetPair clampOffsetsToScreen(
+            MinecraftClient client,
+            int horizontalOffset,
+            int verticalOffset,
+            boolean vertical,
+            int segmentCount
+    ) {
         if (client == null) {
-            return;
+            return new OffsetPair(horizontalOffset, verticalOffset);
         }
 
-        LayoutBox box = computeLayout(client, offsetX, offsetY, verticalLayout);
+        LayoutBox box = computeLayout(
+                client,
+                horizontalOffset,
+                verticalOffset,
+                vertical,
+                segmentCount
+        );
         int screenWidth = client.getWindow().getScaledWidth();
         int screenHeight = client.getWindow().getScaledHeight();
 
+        int x = horizontalOffset;
+        int y = verticalOffset;
+
         if (box.startX < SCREEN_MARGIN) {
-            offsetX += SCREEN_MARGIN - box.startX;
+            x += SCREEN_MARGIN - box.startX;
         }
         if (box.startX + box.totalWidth > screenWidth - SCREEN_MARGIN) {
-            offsetX -= box.startX + box.totalWidth - (screenWidth - SCREEN_MARGIN);
+            x -= box.startX + box.totalWidth - (screenWidth - SCREEN_MARGIN);
         }
         if (box.startY < SCREEN_MARGIN) {
-            offsetY += SCREEN_MARGIN - box.startY;
+            y += SCREEN_MARGIN - box.startY;
         }
         if (box.startY + box.totalHeight > screenHeight - SCREEN_MARGIN) {
-            offsetY -= box.startY + box.totalHeight - (screenHeight - SCREEN_MARGIN);
+            y -= box.startY + box.totalHeight - (screenHeight - SCREEN_MARGIN);
         }
+
+        return new OffsetPair(x, y);
+    }
+
+    private record OffsetPair(int x, int y) {
     }
 
     private record LayoutBox(

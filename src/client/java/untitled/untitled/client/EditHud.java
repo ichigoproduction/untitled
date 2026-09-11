@@ -23,7 +23,8 @@ public final class EditHud extends Screen {
     private enum DragTarget {
         NONE,
         PARTY,
-        FOOD_STACK
+        FOOD,
+        DRINK
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -64,7 +65,7 @@ public final class EditHud extends Screen {
                         })
                         .then(literal("reset").executes(context -> {
                             PartyHud.resetPosition();
-                            FoodStack.resetPosition();
+                            FoodStack.resetPositions();
                             saveSettings();
                             return 1;
                         }))
@@ -93,10 +94,12 @@ public final class EditHud extends Screen {
         context.fill(0, 0, width, height, 0x88000000);
 
         PartyHud.renderEditorPreview(context);
-        FoodStack.renderEditorPreview(context);
+        FoodStack.renderFoodEditorPreview(context);
+        FoodStack.renderDrinkEditorPreview(context);
 
         HudBounds partyBounds = PartyHud.getEditorBounds();
-        HudBounds foodStackBounds = FoodStack.getEditorBounds();
+        HudBounds foodBounds = FoodStack.getFoodEditorBounds();
+        HudBounds drinkBounds = FoodStack.getDrinkEditorBounds();
 
         drawSelectionBox(
                 context,
@@ -105,8 +108,13 @@ public final class EditHud extends Screen {
         );
         drawSelectionBox(
                 context,
-                foodStackBounds,
-                dragTarget == DragTarget.FOOD_STACK || foodStackBounds.contains(mouseX, mouseY)
+                foodBounds,
+                dragTarget == DragTarget.FOOD || foodBounds.contains(mouseX, mouseY)
+        );
+        drawSelectionBox(
+                context,
+                drinkBounds,
+                dragTarget == DragTarget.DRINK || drinkBounds.contains(mouseX, mouseY)
         );
 
         super.render(context, mouseX, mouseY, delta);
@@ -132,8 +140,12 @@ public final class EditHud extends Screen {
                 dragTarget = DragTarget.PARTY;
                 return true;
             }
-            if (FoodStack.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.FOOD_STACK;
+            if (FoodStack.getFoodEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.FOOD;
+                return true;
+            }
+            if (FoodStack.getDrinkEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.DRINK;
                 return true;
             }
         }
@@ -154,8 +166,10 @@ public final class EditHud extends Screen {
 
             if (dragTarget == DragTarget.PARTY) {
                 PartyHud.moveBy(moveX, moveY);
-            } else if (dragTarget == DragTarget.FOOD_STACK) {
-                FoodStack.moveBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.FOOD) {
+                FoodStack.moveFoodBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.DRINK) {
+                FoodStack.moveDrinkBy(moveX, moveY);
             }
             return true;
         }
