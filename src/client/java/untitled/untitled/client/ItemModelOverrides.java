@@ -44,6 +44,9 @@ public final class ItemModelOverrides {
     private record ModelRule(RuleKind kind, String payload, String description) {
     }
 
+    private record ModelMapping(String itemName, String itemId) {
+    }
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_PATH = FabricLoader.getInstance()
             .getConfigDir()
@@ -69,31 +72,33 @@ public final class ItemModelOverrides {
             dispatcher.register(
                     literal("imodel")
                             .then(literal("remove")
-                                    .then(argument("name", StringArgumentType.string())
+                                    .then(argument("name", StringArgumentType.greedyString())
                                             .executes(context -> removeRule(
                                                     context.getSource(),
-                                                    StringArgumentType.getString(context, "name")
+                                                    normalizeNameArgument(
+                                                            StringArgumentType.getString(context, "name")
+                                                    )
                                             ))))
                             .then(literal("clear")
                                     .executes(context -> clearRules(context.getSource())))
                             .then(literal("list")
                                     .executes(context -> listRules(context.getSource())))
-                            .then(argument("name", StringArgumentType.string())
-                                    .then(argument("item", StringArgumentType.word())
-                                            .suggests((context, builder) -> suggestVanillaItems(builder))
-                                            .executes(context -> setVanillaRule(
-                                                    context.getSource(),
-                                                    StringArgumentType.getString(context, "name"),
-                                                    StringArgumentType.getString(context, "item")
-                                            ))))
+                            .then(argument("mapping", StringArgumentType.greedyString())
+                                    .suggests((context, builder) -> suggestVanillaItemsInMapping(builder))
+                                    .executes(context -> setVanillaRuleFromMapping(
+                                            context.getSource(),
+                                            StringArgumentType.getString(context, "mapping")
+                                    )))
             );
 
             dispatcher.register(
                     literal("imodelcopy")
-                            .then(argument("name", StringArgumentType.string())
+                            .then(argument("name", StringArgumentType.greedyString())
                                     .executes(context -> copyHeldModel(
                                             context.getSource(),
-                                            StringArgumentType.getString(context, "name")
+                                            normalizeNameArgument(
+                                                    StringArgumentType.getString(context, "name")
+                                            )
                                     )))
             );
         });
@@ -113,6 +118,55 @@ public final class ItemModelOverrides {
             case VANILLA_ITEM -> createVanillaStack(rule.payload(), original);
             case COPIED_STACK -> createCopiedStack(rule, original);
         };
+    }
+
+    private static int setVanillaRuleFromMapping(
+            FabricClientCommandSource source,
+            String rawMapping
+    ) {
+        ModelMapping mapping = parseMapping(rawMapping);
+        if (mapping == null) {
+            source.sendError(Text.literal(
+                    "사용법: /imodel <아이템 이름> <minecraft:item_id>"
+            ));
+            return 0;
+        }
+
+        return setVanillaRule(source, mapping.itemName(), mapping.itemId());
+    }
+
+    private static ModelMapping parseMapping(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        int split = trimmed.lastIndexOf(' ');
+        if (split <= 0 || split >= trimmed.length() - 1) {
+            return null;
+        }
+
+        String itemName = normalizeNameArgument(trimmed.substring(0, split));
+        String itemId = trimmed.substring(split + 1).trim();
+        if (itemName == null || itemName.isBlank() || itemId.isEmpty()) {
+            return null;
+        }
+
+        return new ModelMapping(itemName, itemId);
+    }
+
+    private static String normalizeNameArgument(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2
+                && trimmed.startsWith("\"")
+                && trimmed.endsWith("\"")) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 
     private static int setVanillaRule(
@@ -217,18 +271,31 @@ public final class ItemModelOverrides {
         return RULES.size();
     }
 
-    private static CompletableFuture<Suggestions> suggestVanillaItems(SuggestionsBuilder builder) {
-        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+    private static CompletableFuture<Suggestions> suggestVanillaItemsInMapping(
+            SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining();
+        int lastSpace = remaining.lastIndexOf(' ');
+        if (lastSpace < 0) {
+            return builder.buildFuture();
+        }
+
+        String itemPrefix = remaining.substring(lastSpace + 1).toLowerCase(Locale.ROOT);
+        SuggestionsBuilder itemBuilder = builder.createOffset(
+                builder.getStart() + lastSpace + 1
+        );
+
         for (Identifier id : Registries.ITEM.getIds()) {
             if (!"minecraft".equals(id.getNamespace())) {
                 continue;
             }
+
             String value = id.toString();
-            if (remaining.isEmpty() || value.startsWith(remaining)) {
-                builder.suggest(value);
+            if (itemPrefix.isEmpty() || value.startsWith(itemPrefix)) {
+                itemBuilder.suggest(value);
             }
         }
-        return builder.buildFuture();
+        return itemBuilder.buildFuture();
     }
 
     private static String validateName(FabricClientCommandSource source, String itemName) {
