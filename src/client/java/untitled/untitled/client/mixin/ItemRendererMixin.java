@@ -11,14 +11,47 @@ import untitled.untitled.client.ItemModelOverrides;
 
 @Mixin(ItemRenderer.class)
 public abstract class ItemRendererMixin {
+    private static final String RENDER_ITEM_METHOD =
+            "renderItem(Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ModelTransformationMode;"
+                    + "IILnet/minecraft/client/util/math/MatrixStack;"
+                    + "Lnet/minecraft/client/render/VertexConsumerProvider;"
+                    + "Lnet/minecraft/world/World;I)V";
+
     @ModifyArgs(
-            method = "renderItem(Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ModelTransformationMode;IILnet/minecraft/client/util/math/MatrixStack;Lnet/minecraft/client/render/VertexConsumerProvider;Lnet/minecraft/world/World;I)V",
+            method = RENDER_ITEM_METHOD,
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/item/ItemModelManager;update(Lnet/minecraft/client/render/item/ItemRenderState;Lnet/minecraft/item/ItemStack;Lnet/minecraft/item/ModelTransformationMode;Lnet/minecraft/world/World;Lnet/minecraft/entity/LivingEntity;I)V"
-            )
+                    target = "Lnet/minecraft/client/item/ItemModelManager;update("
+                            + "Lnet/minecraft/client/render/item/ItemRenderState;"
+                            + "Lnet/minecraft/item/ItemStack;"
+                            + "Lnet/minecraft/item/ModelTransformationMode;Z"
+                            + "Lnet/minecraft/world/World;"
+                            + "Lnet/minecraft/entity/LivingEntity;I)V"
+            ),
+            require = 0
     )
-    private void untitled$replaceGuiModel(Args args) {
+    private void untitled$replaceGuiModelWithHandFlag(Args args) {
+        untitled$replaceGuiModel(args);
+    }
+
+    @ModifyArgs(
+            method = RENDER_ITEM_METHOD,
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/item/ItemModelManager;update("
+                            + "Lnet/minecraft/client/render/item/ItemRenderState;"
+                            + "Lnet/minecraft/item/ItemStack;"
+                            + "Lnet/minecraft/item/ModelTransformationMode;"
+                            + "Lnet/minecraft/world/World;"
+                            + "Lnet/minecraft/entity/LivingEntity;I)V"
+            ),
+            require = 0
+    )
+    private void untitled$replaceGuiModelWithoutHandFlag(Args args) {
+        untitled$replaceGuiModel(args);
+    }
+
+    private static void untitled$replaceGuiModel(Args args) {
         ItemStack original = args.get(1);
         ModelTransformationMode mode = args.get(2);
         args.set(1, ItemModelOverrides.resolveGuiStack(original, mode));
