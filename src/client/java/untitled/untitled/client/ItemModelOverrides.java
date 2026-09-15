@@ -316,7 +316,7 @@ public final class ItemModelOverrides {
         ItemModelRuntime.reset();
         saveSettings();
         source.sendFeedback(Text.literal(
-                "아이템 모델 변경: " + (enabled ? "ON" : "OFF")
+                "imodel : " + (enabled ? "ON" : "OFF")
         ));
         return 1;
     }
@@ -328,7 +328,7 @@ public final class ItemModelOverrides {
     ) {
         ModelRule rule = RULES.get(targetName);
         if (rule == null) {
-            source.sendError(Text.literal("등록된 모델 규칙이 없습니다: " + targetName));
+            source.sendError(Text.literal("Error:4"));
             return 0;
         }
 
@@ -344,7 +344,7 @@ public final class ItemModelOverrides {
         saveSettings();
 
         source.sendFeedback(Text.literal(
-                "모델 범위 " + scope.commandName() + ": "
+                "model scope " + scope.commandName() + " : "
                         + (scopes.enabled(scope) ? "ON" : "OFF")
                         + " (" + targetName + ")"
         ));
@@ -357,7 +357,7 @@ public final class ItemModelOverrides {
     ) {
         ModelRule rule = RULES.get(targetName);
         if (rule == null) {
-            source.sendError(Text.literal("등록된 모델 규칙이 없습니다: " + targetName));
+            source.sendError(Text.literal("Error:4"));
             return 0;
         }
 
@@ -373,7 +373,7 @@ public final class ItemModelOverrides {
         saveSettings();
 
         source.sendFeedback(Text.literal(
-                "모델 범위 전체: " + scopes.summary() + " (" + targetName + ")"
+                "model scope all : " + scopes.summary() + " (" + targetName + ")"
         ));
         return 1;
     }
@@ -385,9 +385,7 @@ public final class ItemModelOverrides {
         ModelCommandParser.ModelMapping mapping =
                 ModelCommandParser.parseModelMapping(rawMapping);
         if (mapping == null) {
-            source.sendError(Text.literal(
-                    "사용법: /imodel <아이템 이름> <minecraft:item_id>"
-            ));
+            source.sendError(Text.literal("Error:1"));
             return 0;
         }
 
@@ -403,11 +401,11 @@ public final class ItemModelOverrides {
         if (id == null
                 || !"minecraft".equals(id.getNamespace())
                 || !Registries.ITEM.containsId(id)) {
-            source.sendError(Text.literal("바닐라 아이템 ID를 찾을 수 없습니다: " + rawItemId));
+            source.sendError(Text.literal("Error:2"));
             return 0;
         }
 
-        String name = validateName(source, itemName);
+        String name = validateName(source, itemName, "Error:3");
         if (name == null) {
             return 0;
         }
@@ -423,12 +421,12 @@ public final class ItemModelOverrides {
         invalidateRuleCache(name);
         ItemModelRuntime.reset();
         saveSettings();
-        source.sendFeedback(Text.literal("모델 변경: " + name + " -> " + id));
+        source.sendFeedback(Text.literal("model : " + name + " -> " + id));
         return 1;
     }
 
     private static int copyHeldModel(FabricClientCommandSource source, String itemName) {
-        String name = validateName(source, itemName);
+        String name = validateName(source, itemName, "Error:7");
         if (name == null) {
             return 0;
         }
@@ -438,7 +436,7 @@ public final class ItemModelOverrides {
             held = source.getPlayer().getOffHandStack();
         }
         if (held.isEmpty()) {
-            source.sendError(Text.literal("먼저 복사할 모델의 아이템을 손에 들어주세요."));
+            source.sendError(Text.literal("Error:5"));
             return 0;
         }
 
@@ -462,11 +460,11 @@ public final class ItemModelOverrides {
             saveSettings();
 
             source.sendFeedback(Text.literal(
-                    "모델 복사: " + name + " -> 현재 손 아이템 (" + sourceId + ")"
+                    "model copy : " + name + " -> held item (" + sourceId + ")"
             ));
             return 1;
         } catch (Exception exception) {
-            source.sendError(Text.literal("현재 손 아이템의 모델 데이터를 저장하지 못했습니다."));
+            source.sendError(Text.literal("Error:6"));
             return 0;
         }
     }
@@ -478,22 +476,17 @@ public final class ItemModelOverrides {
         ModelCommandParser.CopyStateMapping mapping =
                 ModelCommandParser.parseCopyStateMapping(rawMapping);
         if (mapping == null) {
-            source.sendError(Text.literal(
-                    "사용법: /imodelcopyfrom <원본 이름> <대상 이름> [sheathed|drawn]\n"
-                            + "공백이 있는 이름은 따옴표로 감싸세요."
-            ));
+            source.sendError(Text.literal("Error:9"));
             return 0;
         }
 
         ItemModelCache.CachedItem cached = ItemModelCache.find(mapping.sourceName());
         if (cached == null) {
-            source.sendError(Text.literal(
-                    "자동 모델 캐시에서 찾을 수 없습니다: " + mapping.sourceName()
-            ));
+            source.sendError(Text.literal("Error:8"));
             return 0;
         }
 
-        String targetName = validateName(source, mapping.targetName());
+        String targetName = validateName(source, mapping.targetName(), "Error:9");
         if (targetName == null) {
             return 0;
         }
@@ -520,7 +513,7 @@ public final class ItemModelOverrides {
             saveSettings();
 
             source.sendFeedback(Text.literal(
-                    "캐시 모델 복사: " + mapping.sourceName()
+                    "cache copy : " + mapping.sourceName()
                             + " -> " + targetName
                             + " (" + cached.itemId() + ")"
             ));
@@ -548,7 +541,7 @@ public final class ItemModelOverrides {
             saveSettings();
 
             source.sendFeedback(Text.literal(
-                    "검집 모델 저장: " + mapping.sourceName()
+                    "save model 1 : " + mapping.sourceName()
                             + " -> " + targetName
                             + " (" + cached.itemId() + ")"
             ));
@@ -559,9 +552,7 @@ public final class ItemModelOverrides {
                 || existing.kind() != RuleKind.COPIED_STACK
                 || existing.payload() == null
                 || existing.payload().isBlank()) {
-            source.sendError(Text.literal(
-                    "먼저 sheathed 상태를 저장해주세요: " + targetName
-            ));
+            source.sendError(Text.literal("Error:10"));
             return 0;
         }
 
@@ -580,7 +571,7 @@ public final class ItemModelOverrides {
         saveSettings();
 
         source.sendFeedback(Text.literal(
-                "발도 모델 저장: " + mapping.sourceName()
+                "save model 2 : " + mapping.sourceName()
                         + " -> " + targetName
                         + " (" + cached.itemId() + ")"
         ));
@@ -588,20 +579,20 @@ public final class ItemModelOverrides {
     }
 
     private static int removeRule(FabricClientCommandSource source, String itemName) {
-        String name = validateName(source, itemName);
+        String name = validateName(source, itemName, "Error:11");
         if (name == null) {
             return 0;
         }
 
         if (!RULES.remove(name)) {
-            source.sendError(Text.literal("등록된 모델 규칙이 없습니다: " + name));
+            source.sendError(Text.literal("Error:11"));
             return 0;
         }
 
         invalidateRuleCache(name);
         ItemModelRuntime.reset();
         saveSettings();
-        source.sendFeedback(Text.literal("모델 규칙 삭제: " + name));
+        source.sendFeedback(Text.literal("remove model : " + name));
         return 1;
     }
 
@@ -611,7 +602,7 @@ public final class ItemModelOverrides {
         DECODED_COPY_STACKS.clear();
         ItemModelRuntime.reset();
         saveSettings();
-        source.sendFeedback(Text.literal("모델 규칙 전체 삭제: " + count + "개"));
+        source.sendFeedback(Text.literal("clear models : " + count));
         return 1;
     }
 
@@ -706,9 +697,13 @@ public final class ItemModelOverrides {
         return builder.buildFuture();
     }
 
-    private static String validateName(FabricClientCommandSource source, String itemName) {
+    private static String validateName(
+            FabricClientCommandSource source,
+            String itemName,
+            String errorCode
+    ) {
         if (itemName == null || itemName.isBlank()) {
-            source.sendError(Text.literal("아이템 이름은 비어 있을 수 없습니다."));
+            source.sendError(Text.literal(errorCode));
             return null;
         }
         return itemName;
