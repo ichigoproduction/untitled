@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -38,7 +39,7 @@ public final class ItemModelCache {
             .getConfigDir()
             .resolve("152_item_model_cache.json");
     private static final Map<String, CachedItem> CACHE = new LinkedHashMap<>();
-    private static final int LIST_LIMIT = 50;
+    private static final int PAGE_SIZE = 20;
 
     private static boolean initialized = false;
 
@@ -63,12 +64,21 @@ public final class ItemModelCache {
         return CACHE.get(itemName);
     }
 
+    static Iterable<String> names() {
+        return CACHE.keySet();
+    }
+
     private static void registerCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(
                         literal("imodelcache")
                                 .then(literal("list")
-                                        .executes(context -> listCache(context.getSource())))
+                                        .executes(context -> listCache(context.getSource(), 1))
+                                        .then(argument("page", IntegerArgumentType.integer(1))
+                                                .executes(context -> listCache(
+                                                        context.getSource(),
+                                                        IntegerArgumentType.getInteger(context, "page")
+                                                ))))
                                 .then(literal("remove")
                                         .then(argument("name", StringArgumentType.greedyString())
                                                 .executes(context -> removeCacheEntry(
@@ -136,30 +146,40 @@ public final class ItemModelCache {
         }
     }
 
-    private static int listCache(FabricClientCommandSource source) {
+    private static int listCache(FabricClientCommandSource source, int page) {
         if (CACHE.isEmpty()) {
             source.sendFeedback(Text.literal("자동 모델 캐시가 비어 있습니다."));
             return 1;
         }
 
-        source.sendFeedback(Text.literal("자동 모델 캐시: " + CACHE.size() + "개"));
-        int shown = 0;
-        for (Map.Entry<String, CachedItem> entry : CACHE.entrySet()) {
-            if (shown >= LIST_LIMIT) {
-                break;
-            }
-            source.sendFeedback(Text.literal(
-                    "- " + entry.getKey() + " -> " + entry.getValue().itemId()
+        int totalPages = Math.max(1, (CACHE.size() + PAGE_SIZE - 1) / PAGE_SIZE);
+        if (page > totalPages) {
+            source.sendError(Text.literal(
+                    "존재하지 않는 페이지입니다: " + page + " (1-" + totalPages + ")"
             ));
-            shown++;
+            return 0;
         }
 
-        if (CACHE.size() > shown) {
-            source.sendFeedback(Text.literal(
-                    "... 외 " + (CACHE.size() - shown) + "개 (최대 " + LIST_LIMIT + "개 표시)"
-            ));
+        source.sendFeedback(Text.literal(
+                "자동 모델 캐시: " + CACHE.size() + "개 | " + page + "/" + totalPages + " 페이지"
+        ));
+
+        int startIndex = (page - 1) * PAGE_SIZE;
+        int endIndex = Math.min(startIndex + PAGE_SIZE, CACHE.size());
+        int index = 0;
+        for (Map.Entry<String, CachedItem> entry : CACHE.entrySet()) {
+            if (index >= startIndex && index < endIndex) {
+                source.sendFeedback(Text.literal(
+                        "- " + entry.getKey() + " -> " + entry.getValue().itemId()
+                ));
+            }
+            if (index >= endIndex) {
+                break;
+            }
+            index++;
         }
-        return CACHE.size();
+
+        return endIndex - startIndex;
     }
 
     private static int removeCacheEntry(FabricClientCommandSource source, String itemName) {
