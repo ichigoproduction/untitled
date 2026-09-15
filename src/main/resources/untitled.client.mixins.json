@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "HeldItemRendererMixin",
-    "ItemRendererMixin",
+    "DrawContextMixin",
     "MinecraftClientMixin",
     "PlayerEntityRendererMixin"
   ],
