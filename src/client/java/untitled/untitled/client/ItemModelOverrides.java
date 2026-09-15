@@ -608,23 +608,32 @@ public final class ItemModelOverrides {
 
     private static int listRules(FabricClientCommandSource source) {
         source.sendFeedback(Text.literal(
-                "아이템 모델 변경 상태: " + (enabled ? "ON" : "OFF")
+                "imodel : " + (enabled ? "ON" : "OFF")
         ));
 
         if (RULES.size() == 0) {
-            source.sendFeedback(Text.literal("등록된 모델 규칙이 없습니다."));
+            source.sendFeedback(Text.literal("model list : empty"));
             return 1;
         }
 
-        source.sendFeedback(Text.literal("등록된 모델 규칙: " + RULES.size() + "개"));
+        source.sendFeedback(Text.literal("model list : " + RULES.size()));
         for (Map.Entry<String, ModelRule> entry : RULES.entries()) {
             ModelRule rule = entry.getValue();
-            String states = rule.hasDrawn() ? "sheathed+drawn" : "static";
+            String state = rule.hasDrawn() ? "model 1+2" : "static";
+            String description = rule.description();
+            if (description.startsWith("cache:")) {
+                description = "cache : " + description.substring("cache:".length());
+            } else if (description.startsWith("copy:")) {
+                description = "copy : " + description.substring("copy:".length());
+            } else {
+                description = "model : " + description;
+            }
+
             source.sendFeedback(Text.literal(
                     "- " + entry.getKey()
-                            + " -> " + rule.description()
-                            + " | states=" + states
-                            + " | scopes=" + rule.scopes().summary()
+                            + " -> " + description
+                            + " | state : " + state
+                            + " | scope : " + rule.scopes().summary()
             ));
         }
         return RULES.size();
