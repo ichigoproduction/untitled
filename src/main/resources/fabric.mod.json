@@ -13,6 +13,9 @@
       "untitled.untitled.client.UntitledClient"
     ]
   },
+  "mixins": [
+    "untitled.client.mixins.json"
+  ],
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
