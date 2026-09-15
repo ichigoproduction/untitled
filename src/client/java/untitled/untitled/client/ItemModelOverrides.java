@@ -44,9 +44,6 @@ public final class ItemModelOverrides {
     private record ModelRule(RuleKind kind, String payload, String description) {
     }
 
-    private record ModelMapping(String itemName, String itemId) {
-    }
-
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_PATH = FabricLoader.getInstance()
             .getConfigDir()
@@ -56,6 +53,7 @@ public final class ItemModelOverrides {
     private static final Map<String, ItemStack> DECODED_COPY_STACKS = new HashMap<>();
 
     private static boolean initialized = false;
+    private static boolean enabled = true;
     private static DynamicRegistryManager cachedRegistryManager = null;
 
     private ItemModelOverrides() {
@@ -71,11 +69,13 @@ public final class ItemModelOverrides {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(
                     literal("imodel")
+                            .then(literal("toggle")
+                                    .executes(context -> toggleEnabled(context.getSource())))
                             .then(literal("remove")
                                     .then(argument("name", StringArgumentType.greedyString())
                                             .executes(context -> removeRule(
                                                     context.getSource(),
-                                                    normalizeNameArgument(
+                                                    ModelCommandParser.normalizeNameArgument(
                                                             StringArgumentType.getString(context, "name")
                                                     )
                                             ))))
@@ -96,16 +96,25 @@ public final class ItemModelOverrides {
                             .then(argument("name", StringArgumentType.greedyString())
                                     .executes(context -> copyHeldModel(
                                             context.getSource(),
-                                            normalizeNameArgument(
+                                            ModelCommandParser.normalizeNameArgument(
                                                     StringArgumentType.getString(context, "name")
                                             )
+                                    )))
+            );
+
+            dispatcher.register(
+                    literal("imodelcopyfrom")
+                            .then(argument("mapping", StringArgumentType.greedyString())
+                                    .executes(context -> copyCachedModel(
+                                            context.getSource(),
+                                            StringArgumentType.getString(context, "mapping")
                                     )))
             );
         });
     }
 
     public static ItemStack resolveFirstPersonStack(ItemStack original) {
-        if (original == null || original.isEmpty()) {
+        if (!enabled || original == null || original.isEmpty()) {
             return original;
         }
 
@@ -120,11 +129,21 @@ public final class ItemModelOverrides {
         };
     }
 
+    private static int toggleEnabled(FabricClientCommandSource source) {
+        enabled = !enabled;
+        saveSettings();
+        source.sendFeedback(Text.literal(
+                "아이템 모델 변경: " + (enabled ? "ON" : "OFF")
+        ));
+        return 1;
+    }
+
     private static int setVanillaRuleFromMapping(
             FabricClientCommandSource source,
             String rawMapping
     ) {
-        ModelMapping mapping = parseMapping(rawMapping);
+        ModelCommandParser.ModelMapping mapping =
+                ModelCommandParser.parseModelMapping(rawMapping);
         if (mapping == null) {
             source.sendError(Text.literal(
                     "사용법: /imodel <아이템 이름> <minecraft:item_id>"
@@ -133,40 +152,6 @@ public final class ItemModelOverrides {
         }
 
         return setVanillaRule(source, mapping.itemName(), mapping.itemId());
-    }
-
-    private static ModelMapping parseMapping(String value) {
-        if (value == null) {
-            return null;
-        }
-
-        String trimmed = value.trim();
-        int split = trimmed.lastIndexOf(' ');
-        if (split <= 0 || split >= trimmed.length() - 1) {
-            return null;
-        }
-
-        String itemName = normalizeNameArgument(trimmed.substring(0, split));
-        String itemId = trimmed.substring(split + 1).trim();
-        if (itemName == null || itemName.isBlank() || itemId.isEmpty()) {
-            return null;
-        }
-
-        return new ModelMapping(itemName, itemId);
-    }
-
-    private static String normalizeNameArgument(String value) {
-        if (value == null) {
-            return null;
-        }
-
-        String trimmed = value.trim();
-        if (trimmed.length() >= 2
-                && trimmed.startsWith("\"")
-                && trimmed.endsWith("\"")) {
-            return trimmed.substring(1, trimmed.length() - 1);
-        }
-        return trimmed;
     }
 
     private static int setVanillaRule(
@@ -230,6 +215,49 @@ public final class ItemModelOverrides {
         }
     }
 
+    private static int copyCachedModel(
+            FabricClientCommandSource source,
+            String rawMapping
+    ) {
+        ModelCommandParser.CopyMapping mapping =
+                ModelCommandParser.parseCopyMapping(rawMapping);
+        if (mapping == null) {
+            source.sendError(Text.literal(
+                    "사용법: /imodelcopyfrom <원본 이름> <대상 이름>\n"
+                            + "공백이 있는 이름은 따옴표로 감싸세요."
+            ));
+            return 0;
+        }
+
+        ItemModelCache.CachedItem cached = ItemModelCache.find(mapping.sourceName());
+        if (cached == null) {
+            source.sendError(Text.literal(
+                    "자동 모델 캐시에서 찾을 수 없습니다: " + mapping.sourceName()
+            ));
+            return 0;
+        }
+
+        String targetName = validateName(source, mapping.targetName());
+        if (targetName == null) {
+            return 0;
+        }
+
+        String description = "cache:" + mapping.sourceName() + " (" + cached.itemId() + ")";
+        RULES.put(
+                targetName,
+                new ModelRule(RuleKind.COPIED_STACK, cached.payload(), description)
+        );
+        DECODED_COPY_STACKS.remove(targetName);
+        saveSettings();
+
+        source.sendFeedback(Text.literal(
+                "캐시 모델 복사: " + mapping.sourceName()
+                        + " -> " + targetName
+                        + " (" + cached.itemId() + ")"
+        ));
+        return 1;
+    }
+
     private static int removeRule(FabricClientCommandSource source, String itemName) {
         String name = validateName(source, itemName);
         if (name == null) {
@@ -257,6 +285,10 @@ public final class ItemModelOverrides {
     }
 
     private static int listRules(FabricClientCommandSource source) {
+        source.sendFeedback(Text.literal(
+                "아이템 모델 변경 상태: " + (enabled ? "ON" : "OFF")
+        ));
+
         if (RULES.size() == 0) {
             source.sendFeedback(Text.literal("등록된 모델 규칙이 없습니다."));
             return 1;
@@ -350,6 +382,7 @@ public final class ItemModelOverrides {
     private static void loadSettings() {
         RULES.clear();
         DECODED_COPY_STACKS.clear();
+        enabled = true;
 
         if (!Files.isRegularFile(CONFIG_PATH)) {
             return;
@@ -357,7 +390,15 @@ public final class ItemModelOverrides {
 
         try (Reader reader = Files.newBufferedReader(CONFIG_PATH)) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
-            if (root == null || !root.has("rules") || !root.get("rules").isJsonArray()) {
+            if (root == null) {
+                return;
+            }
+
+            if (root.has("enabled")) {
+                enabled = root.get("enabled").getAsBoolean();
+            }
+
+            if (!root.has("rules") || !root.get("rules").isJsonArray()) {
                 return;
             }
 
@@ -397,6 +438,8 @@ public final class ItemModelOverrides {
             Files.createDirectories(CONFIG_PATH.getParent());
 
             JsonObject root = new JsonObject();
+            root.addProperty("enabled", enabled);
+
             JsonArray rules = new JsonArray();
             for (Map.Entry<String, ModelRule> entry : RULES.entries()) {
                 JsonObject object = new JsonObject();
