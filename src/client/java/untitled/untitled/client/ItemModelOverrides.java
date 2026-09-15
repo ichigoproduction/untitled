@@ -184,7 +184,7 @@ public final class ItemModelOverrides {
                             .then(literal("toggle")
                                     .executes(context -> toggleEnabled(context.getSource())))
                             .then(literal("scope")
-                                    .then(argument("target", StringArgumentType.string())
+                                    .then(argument("target", UnicodeStringArgumentType.string())
                                             .suggests((context, builder) -> suggestRuleNames(builder))
                                             .then(scopeToggleNode(RenderScope.FIRST_RIGHT))
                                             .then(scopeToggleNode(RenderScope.FIRST_LEFT))
