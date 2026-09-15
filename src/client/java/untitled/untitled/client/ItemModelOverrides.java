@@ -105,6 +105,7 @@ public final class ItemModelOverrides {
             dispatcher.register(
                     literal("imodelcopyfrom")
                             .then(argument("mapping", StringArgumentType.greedyString())
+                                    .suggests((context, builder) -> suggestCachedSourceNames(builder))
                                     .executes(context -> copyCachedModel(
                                             context.getSource(),
                                             StringArgumentType.getString(context, "mapping")
@@ -330,6 +331,32 @@ public final class ItemModelOverrides {
         return itemBuilder.buildFuture();
     }
 
+    private static CompletableFuture<Suggestions> suggestCachedSourceNames(
+            SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining();
+        if (remaining.indexOf(' ') >= 0 && !remaining.startsWith("\"")) {
+            return builder.buildFuture();
+        }
+        if (remaining.startsWith("\"") && remaining.indexOf('"', 1) >= 0) {
+            return builder.buildFuture();
+        }
+
+        String normalizedPrefix = remaining.startsWith("\"")
+                ? remaining.substring(1).toLowerCase(Locale.ROOT)
+                : remaining.toLowerCase(Locale.ROOT);
+
+        for (String name : ItemModelCache.names()) {
+            if (!name.toLowerCase(Locale.ROOT).startsWith(normalizedPrefix)) {
+                continue;
+            }
+
+            String suggestion = name.contains(" ") ? "\"" + name + "\"" : name;
+            builder.suggest(suggestion);
+        }
+        return builder.buildFuture();
+    }
+
     private static String validateName(FabricClientCommandSource source, String itemName) {
         if (itemName == null || itemName.isBlank()) {
             source.sendError(Text.literal("아이템 이름은 비어 있을 수 없습니다."));
@@ -439,7 +466,6 @@ public final class ItemModelOverrides {
 
             JsonObject root = new JsonObject();
             root.addProperty("enabled", enabled);
-
             JsonArray rules = new JsonArray();
             for (Map.Entry<String, ModelRule> entry : RULES.entries()) {
                 JsonObject object = new JsonObject();
