@@ -49,7 +49,11 @@ public final class ItemModelInspector {
         try {
             ItemStack snapshot = held.copyWithCount(1);
             Identifier itemId = Registries.ITEM.getId(snapshot.getItem());
-            NbtCompound stackNbt = snapshot.toNbt(source.getWorld().getRegistryManager());
+            NbtElement encoded = snapshot.toNbt(source.getWorld().getRegistryManager());
+            if (!(encoded instanceof NbtCompound stackNbt)) {
+                source.sendError(Text.literal("아이템 NBT 형식이 예상과 다릅니다."));
+                return 0;
+            }
             NbtCompound components = stackNbt.getCompound("components");
 
             source.sendFeedback(Text.literal(
