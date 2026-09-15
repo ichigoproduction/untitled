@@ -148,20 +148,18 @@ public final class ItemModelCache {
 
     private static int listCache(FabricClientCommandSource source, int page) {
         if (CACHE.isEmpty()) {
-            source.sendFeedback(Text.literal("자동 모델 캐시가 비어 있습니다."));
+            source.sendFeedback(Text.literal("cache list : empty"));
             return 1;
         }
 
         int totalPages = Math.max(1, (CACHE.size() + PAGE_SIZE - 1) / PAGE_SIZE);
         if (page > totalPages) {
-            source.sendError(Text.literal(
-                    "존재하지 않는 페이지입니다: " + page + " (1-" + totalPages + ")"
-            ));
+            source.sendError(Text.literal("Error:12"));
             return 0;
         }
 
         source.sendFeedback(Text.literal(
-                "자동 모델 캐시: " + CACHE.size() + "개 | " + page + "/" + totalPages + " 페이지"
+                "cache list : " + CACHE.size() + " | page " + page + "/" + totalPages
         ));
 
         int startIndex = (page - 1) * PAGE_SIZE;
@@ -184,17 +182,17 @@ public final class ItemModelCache {
 
     private static int removeCacheEntry(FabricClientCommandSource source, String itemName) {
         if (itemName == null || itemName.isBlank()) {
-            source.sendError(Text.literal("삭제할 캐시 아이템 이름을 입력해주세요."));
+            source.sendError(Text.literal("Error:13"));
             return 0;
         }
 
         if (CACHE.remove(itemName) == null) {
-            source.sendError(Text.literal("캐시에서 찾을 수 없습니다: " + itemName));
+            source.sendError(Text.literal("Error:14"));
             return 0;
         }
 
         saveSettings();
-        source.sendFeedback(Text.literal("모델 캐시 삭제: " + itemName));
+        source.sendFeedback(Text.literal("remove cache : " + itemName));
         return 1;
     }
 
@@ -202,7 +200,7 @@ public final class ItemModelCache {
         int count = CACHE.size();
         CACHE.clear();
         saveSettings();
-        source.sendFeedback(Text.literal("모델 캐시 전체 삭제: " + count + "개"));
+        source.sendFeedback(Text.literal("clear cache : " + count));
         return 1;
     }
 
