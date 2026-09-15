@@ -4,7 +4,10 @@
   "package": "untitled.untitled.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "HeldItemRendererMixin"
+    "HeldItemRendererMixin",
+    "ItemRendererMixin",
+    "MinecraftClientMixin",
+    "PlayerEntityRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

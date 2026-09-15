@@ -11,5 +11,6 @@ public class UntitledClient implements ClientModInitializer {
         ItemModelCache.init();
         ItemModelInspector.init();
         ItemModelOverrides.init();
+        ItemModelRuntime.init();
     }
 }

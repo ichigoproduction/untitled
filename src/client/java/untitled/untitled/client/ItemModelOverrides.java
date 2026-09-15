@@ -6,14 +6,17 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.ModelTransformationMode;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.StringNbtReader;
 import net.minecraft.registry.DynamicRegistryManager;
@@ -41,7 +44,116 @@ public final class ItemModelOverrides {
         COPIED_STACK
     }
 
-    private record ModelRule(RuleKind kind, String payload, String description) {
+    private enum RenderScope {
+        FIRST_RIGHT("first_right"),
+        FIRST_LEFT("first_left"),
+        THIRD_RIGHT("third_right"),
+        THIRD_LEFT("third_left"),
+        GUI("gui"),
+        EQUIPMENT("equipment");
+
+        private final String commandName;
+
+        RenderScope(String commandName) {
+            this.commandName = commandName;
+        }
+
+        String commandName() {
+            return commandName;
+        }
+    }
+
+    private record ScopeSettings(
+            boolean firstRight,
+            boolean firstLeft,
+            boolean thirdRight,
+            boolean thirdLeft,
+            boolean gui,
+            boolean equipment
+    ) {
+        static ScopeSettings defaults() {
+            return new ScopeSettings(true, true, false, false, false, false);
+        }
+
+        boolean enabled(RenderScope scope) {
+            return switch (scope) {
+                case FIRST_RIGHT -> firstRight;
+                case FIRST_LEFT -> firstLeft;
+                case THIRD_RIGHT -> thirdRight;
+                case THIRD_LEFT -> thirdLeft;
+                case GUI -> gui;
+                case EQUIPMENT -> equipment;
+            };
+        }
+
+        ScopeSettings toggle(RenderScope scope) {
+            return switch (scope) {
+                case FIRST_RIGHT -> new ScopeSettings(
+                        !firstRight, firstLeft, thirdRight, thirdLeft, gui, equipment
+                );
+                case FIRST_LEFT -> new ScopeSettings(
+                        firstRight, !firstLeft, thirdRight, thirdLeft, gui, equipment
+                );
+                case THIRD_RIGHT -> new ScopeSettings(
+                        firstRight, firstLeft, !thirdRight, thirdLeft, gui, equipment
+                );
+                case THIRD_LEFT -> new ScopeSettings(
+                        firstRight, firstLeft, thirdRight, !thirdLeft, gui, equipment
+                );
+                case GUI -> new ScopeSettings(
+                        firstRight, firstLeft, thirdRight, thirdLeft, !gui, equipment
+                );
+                case EQUIPMENT -> new ScopeSettings(
+                        firstRight, firstLeft, thirdRight, thirdLeft, gui, !equipment
+                );
+            };
+        }
+
+        ScopeSettings toggleAll() {
+            boolean allEnabled = firstRight
+                    && firstLeft
+                    && thirdRight
+                    && thirdLeft
+                    && gui
+                    && equipment;
+            boolean next = !allEnabled;
+            return new ScopeSettings(next, next, next, next, next, next);
+        }
+
+        String summary() {
+            StringBuilder result = new StringBuilder();
+            appendScope(result, firstRight, "first_right");
+            appendScope(result, firstLeft, "first_left");
+            appendScope(result, thirdRight, "third_right");
+            appendScope(result, thirdLeft, "third_left");
+            appendScope(result, gui, "gui");
+            appendScope(result, equipment, "equipment");
+            return result.isEmpty() ? "none" : result.toString();
+        }
+
+        private static void appendScope(StringBuilder target, boolean enabled, String name) {
+            if (!enabled) {
+                return;
+            }
+            if (!target.isEmpty()) {
+                target.append(',');
+            }
+            target.append(name);
+        }
+    }
+
+    private record ModelRule(
+            RuleKind kind,
+            String payload,
+            String drawnPayload,
+            String description,
+            ScopeSettings scopes
+    ) {
+        boolean hasDrawn() {
+            return kind == RuleKind.COPIED_STACK
+                    && drawnPayload != null
+                    && !drawnPayload.isBlank();
+        }
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -71,6 +183,24 @@ public final class ItemModelOverrides {
                     literal("imodel")
                             .then(literal("toggle")
                                     .executes(context -> toggleEnabled(context.getSource())))
+                            .then(literal("scope")
+                                    .then(argument("target", StringArgumentType.string())
+                                            .suggests((context, builder) -> suggestRuleNames(builder))
+                                            .then(scopeToggleNode(RenderScope.FIRST_RIGHT))
+                                            .then(scopeToggleNode(RenderScope.FIRST_LEFT))
+                                            .then(scopeToggleNode(RenderScope.THIRD_RIGHT))
+                                            .then(scopeToggleNode(RenderScope.THIRD_LEFT))
+                                            .then(scopeToggleNode(RenderScope.GUI))
+                                            .then(scopeToggleNode(RenderScope.EQUIPMENT))
+                                            .then(literal("all")
+                                                    .then(literal("toggle")
+                                                            .executes(context -> toggleAllScopes(
+                                                                    context.getSource(),
+                                                                    StringArgumentType.getString(
+                                                                            context,
+                                                                            "target"
+                                                                    )
+                                                            ))))))
                             .then(literal("remove")
                                     .then(argument("name", StringArgumentType.greedyString())
                                             .executes(context -> removeRule(
@@ -114,27 +244,136 @@ public final class ItemModelOverrides {
         });
     }
 
-    public static ItemStack resolveFirstPersonStack(ItemStack original) {
-        if (!enabled || original == null || original.isEmpty()) {
+    static boolean hasDrawnState(String itemName) {
+        if (itemName == null) {
+            return false;
+        }
+        ModelRule rule = RULES.get(itemName);
+        return rule != null && rule.hasDrawn();
+    }
+
+    public static ItemStack resolveFirstPersonStack(
+            ItemStack original,
+            ModelTransformationMode mode,
+            LivingEntity entity
+    ) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || entity != client.player) {
             return original;
         }
 
-        ModelRule rule = RULES.get(original.getName().getString());
-        if (rule == null) {
-            return original;
-        }
-
-        return switch (rule.kind()) {
-            case VANILLA_ITEM -> createVanillaStack(rule.payload(), original);
-            case COPIED_STACK -> createCopiedStack(rule, original);
+        RenderScope scope = switch (mode) {
+            case FIRST_PERSON_RIGHT_HAND -> RenderScope.FIRST_RIGHT;
+            case FIRST_PERSON_LEFT_HAND -> RenderScope.FIRST_LEFT;
+            default -> null;
         };
+        return scope == null ? original : resolveForScope(original, scope, true);
+    }
+
+    public static ItemStack resolveThirdPersonStack(
+            ItemStack original,
+            ModelTransformationMode mode,
+            LivingEntity entity
+    ) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.player == null || entity != client.player) {
+            return original;
+        }
+
+        RenderScope scope = switch (mode) {
+            case THIRD_PERSON_RIGHT_HAND -> RenderScope.THIRD_RIGHT;
+            case THIRD_PERSON_LEFT_HAND -> RenderScope.THIRD_LEFT;
+            default -> null;
+        };
+        return scope == null ? original : resolveForScope(original, scope, true);
+    }
+
+    public static ItemStack resolveGuiStack(ItemStack original, ModelTransformationMode mode) {
+        if (mode != ModelTransformationMode.GUI) {
+            return original;
+        }
+        return resolveForScope(original, RenderScope.GUI, false);
+    }
+
+    public static ItemStack resolveEquipmentStack(ItemStack original) {
+        return resolveForScope(original, RenderScope.EQUIPMENT, false);
+    }
+
+    private static LiteralArgumentBuilder<FabricClientCommandSource> scopeToggleNode(
+            RenderScope scope
+    ) {
+        return literal(scope.commandName())
+                .then(literal("toggle")
+                        .executes(context -> toggleScope(
+                                context.getSource(),
+                                StringArgumentType.getString(context, "target"),
+                                scope
+                        )));
     }
 
     private static int toggleEnabled(FabricClientCommandSource source) {
         enabled = !enabled;
+        ItemModelRuntime.reset();
         saveSettings();
         source.sendFeedback(Text.literal(
                 "아이템 모델 변경: " + (enabled ? "ON" : "OFF")
+        ));
+        return 1;
+    }
+
+    private static int toggleScope(
+            FabricClientCommandSource source,
+            String targetName,
+            RenderScope scope
+    ) {
+        ModelRule rule = RULES.get(targetName);
+        if (rule == null) {
+            source.sendError(Text.literal("등록된 모델 규칙이 없습니다: " + targetName));
+            return 0;
+        }
+
+        ScopeSettings scopes = rule.scopes().toggle(scope);
+        RULES.put(targetName, new ModelRule(
+                rule.kind(),
+                rule.payload(),
+                rule.drawnPayload(),
+                rule.description(),
+                scopes
+        ));
+        ItemModelRuntime.reset();
+        saveSettings();
+
+        source.sendFeedback(Text.literal(
+                "모델 범위 " + scope.commandName() + ": "
+                        + (scopes.enabled(scope) ? "ON" : "OFF")
+                        + " (" + targetName + ")"
+        ));
+        return 1;
+    }
+
+    private static int toggleAllScopes(
+            FabricClientCommandSource source,
+            String targetName
+    ) {
+        ModelRule rule = RULES.get(targetName);
+        if (rule == null) {
+            source.sendError(Text.literal("등록된 모델 규칙이 없습니다: " + targetName));
+            return 0;
+        }
+
+        ScopeSettings scopes = rule.scopes().toggleAll();
+        RULES.put(targetName, new ModelRule(
+                rule.kind(),
+                rule.payload(),
+                rule.drawnPayload(),
+                rule.description(),
+                scopes
+        ));
+        ItemModelRuntime.reset();
+        saveSettings();
+
+        source.sendFeedback(Text.literal(
+                "모델 범위 전체: " + scopes.summary() + " (" + targetName + ")"
         ));
         return 1;
     }
@@ -173,8 +412,16 @@ public final class ItemModelOverrides {
             return 0;
         }
 
-        RULES.put(name, new ModelRule(RuleKind.VANILLA_ITEM, id.toString(), id.toString()));
-        DECODED_COPY_STACKS.remove(name);
+        ScopeSettings scopes = scopesForExistingRule(name);
+        RULES.put(name, new ModelRule(
+                RuleKind.VANILLA_ITEM,
+                id.toString(),
+                null,
+                id.toString(),
+                scopes
+        ));
+        invalidateRuleCache(name);
+        ItemModelRuntime.reset();
         saveSettings();
         source.sendFeedback(Text.literal("모델 변경: " + name + " -> " + id));
         return 1;
@@ -200,10 +447,18 @@ public final class ItemModelOverrides {
             String snbt = snapshot.toNbt(source.getWorld().getRegistryManager()).toString();
             Identifier sourceId = Registries.ITEM.getId(snapshot.getItem());
             String description = "copy:" + sourceId;
+            ScopeSettings scopes = scopesForExistingRule(name);
 
-            RULES.put(name, new ModelRule(RuleKind.COPIED_STACK, snbt, description));
-            DECODED_COPY_STACKS.put(name, snapshot);
+            RULES.put(name, new ModelRule(
+                    RuleKind.COPIED_STACK,
+                    snbt,
+                    null,
+                    description,
+                    scopes
+            ));
+            invalidateRuleCache(name);
             cachedRegistryManager = source.getWorld().getRegistryManager();
+            ItemModelRuntime.reset();
             saveSettings();
 
             source.sendFeedback(Text.literal(
@@ -220,11 +475,11 @@ public final class ItemModelOverrides {
             FabricClientCommandSource source,
             String rawMapping
     ) {
-        ModelCommandParser.CopyMapping mapping =
-                ModelCommandParser.parseCopyMapping(rawMapping);
+        ModelCommandParser.CopyStateMapping mapping =
+                ModelCommandParser.parseCopyStateMapping(rawMapping);
         if (mapping == null) {
             source.sendError(Text.literal(
-                    "사용법: /imodelcopyfrom <원본 이름> <대상 이름>\n"
+                    "사용법: /imodelcopyfrom <원본 이름> <대상 이름> [sheathed|drawn]\n"
                             + "공백이 있는 이름은 따옴표로 감싸세요."
             ));
             return 0;
@@ -244,15 +499,88 @@ public final class ItemModelOverrides {
         }
 
         String description = "cache:" + mapping.sourceName() + " (" + cached.itemId() + ")";
+        ModelRule existing = RULES.get(targetName);
+        ScopeSettings scopes = existing == null
+                ? ScopeSettings.defaults()
+                : existing.scopes();
+
+        if (mapping.state() == null) {
+            RULES.put(
+                    targetName,
+                    new ModelRule(
+                            RuleKind.COPIED_STACK,
+                            cached.payload(),
+                            null,
+                            description,
+                            scopes
+                    )
+            );
+            invalidateRuleCache(targetName);
+            ItemModelRuntime.reset();
+            saveSettings();
+
+            source.sendFeedback(Text.literal(
+                    "캐시 모델 복사: " + mapping.sourceName()
+                            + " -> " + targetName
+                            + " (" + cached.itemId() + ")"
+            ));
+            return 1;
+        }
+
+        if (mapping.state().equals("sheathed")) {
+            String drawnPayload = existing != null
+                    && existing.kind() == RuleKind.COPIED_STACK
+                    ? existing.drawnPayload()
+                    : null;
+
+            RULES.put(
+                    targetName,
+                    new ModelRule(
+                            RuleKind.COPIED_STACK,
+                            cached.payload(),
+                            drawnPayload,
+                            description,
+                            scopes
+                    )
+            );
+            invalidateRuleCache(targetName);
+            ItemModelRuntime.reset();
+            saveSettings();
+
+            source.sendFeedback(Text.literal(
+                    "검집 모델 저장: " + mapping.sourceName()
+                            + " -> " + targetName
+                            + " (" + cached.itemId() + ")"
+            ));
+            return 1;
+        }
+
+        if (existing == null
+                || existing.kind() != RuleKind.COPIED_STACK
+                || existing.payload() == null
+                || existing.payload().isBlank()) {
+            source.sendError(Text.literal(
+                    "먼저 sheathed 상태를 저장해주세요: " + targetName
+            ));
+            return 0;
+        }
+
         RULES.put(
                 targetName,
-                new ModelRule(RuleKind.COPIED_STACK, cached.payload(), description)
+                new ModelRule(
+                        RuleKind.COPIED_STACK,
+                        existing.payload(),
+                        cached.payload(),
+                        existing.description(),
+                        scopes
+                )
         );
-        DECODED_COPY_STACKS.remove(targetName);
+        invalidateRuleCache(targetName);
+        ItemModelRuntime.reset();
         saveSettings();
 
         source.sendFeedback(Text.literal(
-                "캐시 모델 복사: " + mapping.sourceName()
+                "발도 모델 저장: " + mapping.sourceName()
                         + " -> " + targetName
                         + " (" + cached.itemId() + ")"
         ));
@@ -270,7 +598,8 @@ public final class ItemModelOverrides {
             return 0;
         }
 
-        DECODED_COPY_STACKS.remove(name);
+        invalidateRuleCache(name);
+        ItemModelRuntime.reset();
         saveSettings();
         source.sendFeedback(Text.literal("모델 규칙 삭제: " + name));
         return 1;
@@ -280,6 +609,7 @@ public final class ItemModelOverrides {
         int count = RULES.size();
         RULES.clear();
         DECODED_COPY_STACKS.clear();
+        ItemModelRuntime.reset();
         saveSettings();
         source.sendFeedback(Text.literal("모델 규칙 전체 삭제: " + count + "개"));
         return 1;
@@ -297,8 +627,13 @@ public final class ItemModelOverrides {
 
         source.sendFeedback(Text.literal("등록된 모델 규칙: " + RULES.size() + "개"));
         for (Map.Entry<String, ModelRule> entry : RULES.entries()) {
+            ModelRule rule = entry.getValue();
+            String states = rule.hasDrawn() ? "sheathed+drawn" : "static";
             source.sendFeedback(Text.literal(
-                    "- " + entry.getKey() + " -> " + entry.getValue().description()
+                    "- " + entry.getKey()
+                            + " -> " + rule.description()
+                            + " | states=" + states
+                            + " | scopes=" + rule.scopes().summary()
             ));
         }
         return RULES.size();
@@ -357,12 +692,59 @@ public final class ItemModelOverrides {
         return builder.buildFuture();
     }
 
+    private static CompletableFuture<Suggestions> suggestRuleNames(
+            SuggestionsBuilder builder
+    ) {
+        String prefix = builder.getRemaining().toLowerCase(Locale.ROOT).replace("\"", "");
+        for (Map.Entry<String, ModelRule> entry : RULES.entries()) {
+            String name = entry.getKey();
+            if (!name.toLowerCase(Locale.ROOT).startsWith(prefix)) {
+                continue;
+            }
+            builder.suggest(name.contains(" ") ? "\"" + name + "\"" : name);
+        }
+        return builder.buildFuture();
+    }
+
     private static String validateName(FabricClientCommandSource source, String itemName) {
         if (itemName == null || itemName.isBlank()) {
             source.sendError(Text.literal("아이템 이름은 비어 있을 수 없습니다."));
             return null;
         }
         return itemName;
+    }
+
+    private static ScopeSettings scopesForExistingRule(String itemName) {
+        ModelRule existing = RULES.get(itemName);
+        return existing == null ? ScopeSettings.defaults() : existing.scopes();
+    }
+
+    private static ItemStack resolveForScope(
+            ItemStack original,
+            RenderScope scope,
+            boolean allowDrawn
+    ) {
+        if (!enabled || original == null || original.isEmpty()) {
+            return original;
+        }
+
+        String name = original.getName().getString();
+        ModelRule rule = RULES.get(name);
+        if (rule == null || !rule.scopes().enabled(scope)) {
+            return original;
+        }
+
+        return switch (rule.kind()) {
+            case VANILLA_ITEM -> createVanillaStack(rule.payload(), original);
+            case COPIED_STACK -> {
+                boolean drawn = allowDrawn
+                        && rule.hasDrawn()
+                        && ItemModelRuntime.isDrawn(name);
+                String payload = drawn ? rule.drawnPayload() : rule.payload();
+                String cacheKey = name + (drawn ? "|drawn" : "|base");
+                yield createCopiedStack(payload, cacheKey, original);
+            }
+        };
     }
 
     private static ItemStack createVanillaStack(String rawId, ItemStack fallback) {
@@ -375,9 +757,13 @@ public final class ItemModelOverrides {
         return new ItemStack(item);
     }
 
-    private static ItemStack createCopiedStack(ModelRule rule, ItemStack fallback) {
+    private static ItemStack createCopiedStack(
+            String payload,
+            String cacheKey,
+            ItemStack fallback
+    ) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.world == null) {
+        if (client == null || client.world == null || payload == null || payload.isBlank()) {
             return fallback;
         }
 
@@ -387,23 +773,27 @@ public final class ItemModelOverrides {
             DECODED_COPY_STACKS.clear();
         }
 
-        String ruleName = fallback.getName().getString();
-        ItemStack cached = DECODED_COPY_STACKS.get(ruleName);
+        ItemStack cached = DECODED_COPY_STACKS.get(cacheKey);
         if (cached != null && !cached.isEmpty()) {
             return cached;
         }
 
         try {
-            NbtCompound nbt = StringNbtReader.parse(rule.payload());
+            NbtCompound nbt = StringNbtReader.parse(payload);
             ItemStack decoded = ItemStack.fromNbt(registryManager, nbt).orElse(ItemStack.EMPTY);
             if (decoded.isEmpty()) {
                 return fallback;
             }
-            DECODED_COPY_STACKS.put(ruleName, decoded);
+            DECODED_COPY_STACKS.put(cacheKey, decoded);
             return decoded;
         } catch (Exception ignored) {
             return fallback;
         }
+    }
+
+    private static void invalidateRuleCache(String itemName) {
+        DECODED_COPY_STACKS.remove(itemName + "|base");
+        DECODED_COPY_STACKS.remove(itemName + "|drawn");
     }
 
     private static void loadSettings() {
@@ -446,18 +836,51 @@ public final class ItemModelOverrides {
                     String name = object.get("name").getAsString();
                     RuleKind kind = RuleKind.valueOf(object.get("kind").getAsString());
                     String payload = object.get("payload").getAsString();
+                    String drawnPayload = object.has("drawnPayload")
+                            ? object.get("drawnPayload").getAsString()
+                            : null;
                     String description = object.has("description")
                             ? object.get("description").getAsString()
                             : payload;
+                    ScopeSettings scopes = readScopes(object);
 
                     if (!name.isBlank()) {
-                        RULES.put(name, new ModelRule(kind, payload, description));
+                        RULES.put(
+                                name,
+                                new ModelRule(
+                                        kind,
+                                        payload,
+                                        drawnPayload,
+                                        description,
+                                        scopes
+                                )
+                        );
                     }
                 } catch (Exception ignored) {
                 }
             }
         } catch (Exception ignored) {
         }
+    }
+
+    private static ScopeSettings readScopes(JsonObject object) {
+        ScopeSettings defaults = ScopeSettings.defaults();
+        return new ScopeSettings(
+                readBoolean(object, "scopeFirstRight", defaults.firstRight()),
+                readBoolean(object, "scopeFirstLeft", defaults.firstLeft()),
+                readBoolean(object, "scopeThirdRight", defaults.thirdRight()),
+                readBoolean(object, "scopeThirdLeft", defaults.thirdLeft()),
+                readBoolean(object, "scopeGui", defaults.gui()),
+                readBoolean(object, "scopeEquipment", defaults.equipment())
+        );
+    }
+
+    private static boolean readBoolean(
+            JsonObject object,
+            String key,
+            boolean defaultValue
+    ) {
+        return object.has(key) ? object.get(key).getAsBoolean() : defaultValue;
     }
 
     private static void saveSettings() {
@@ -468,11 +891,21 @@ public final class ItemModelOverrides {
             root.addProperty("enabled", enabled);
             JsonArray rules = new JsonArray();
             for (Map.Entry<String, ModelRule> entry : RULES.entries()) {
+                ModelRule rule = entry.getValue();
                 JsonObject object = new JsonObject();
                 object.addProperty("name", entry.getKey());
-                object.addProperty("kind", entry.getValue().kind().name());
-                object.addProperty("payload", entry.getValue().payload());
-                object.addProperty("description", entry.getValue().description());
+                object.addProperty("kind", rule.kind().name());
+                object.addProperty("payload", rule.payload());
+                if (rule.drawnPayload() != null && !rule.drawnPayload().isBlank()) {
+                    object.addProperty("drawnPayload", rule.drawnPayload());
+                }
+                object.addProperty("description", rule.description());
+                object.addProperty("scopeFirstRight", rule.scopes().firstRight());
+                object.addProperty("scopeFirstLeft", rule.scopes().firstLeft());
+                object.addProperty("scopeThirdRight", rule.scopes().thirdRight());
+                object.addProperty("scopeThirdLeft", rule.scopes().thirdLeft());
+                object.addProperty("scopeGui", rule.scopes().gui());
+                object.addProperty("scopeEquipment", rule.scopes().equipment());
                 rules.add(object);
             }
             root.add("rules", rules);

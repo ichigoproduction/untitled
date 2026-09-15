@@ -2,12 +2,16 @@ package untitled.untitled.client;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 final class ModelCommandParser {
     record ModelMapping(String itemName, String itemId) {
     }
 
     record CopyMapping(String sourceName, String targetName) {
+    }
+
+    record CopyStateMapping(String sourceName, String targetName, String state) {
     }
 
     private ModelCommandParser() {
@@ -33,8 +37,16 @@ final class ModelCommandParser {
     }
 
     static CopyMapping parseCopyMapping(String value) {
+        CopyStateMapping mapping = parseCopyStateMapping(value);
+        if (mapping == null || mapping.state() != null) {
+            return null;
+        }
+        return new CopyMapping(mapping.sourceName(), mapping.targetName());
+    }
+
+    static CopyStateMapping parseCopyStateMapping(String value) {
         List<String> parts = tokenize(value);
-        if (parts.size() != 2) {
+        if (parts.size() != 2 && parts.size() != 3) {
             return null;
         }
 
@@ -43,7 +55,15 @@ final class ModelCommandParser {
         if (source == null || target == null || source.isBlank() || target.isBlank()) {
             return null;
         }
-        return new CopyMapping(source, target);
+
+        String state = null;
+        if (parts.size() == 3) {
+            state = parts.get(2).toLowerCase(Locale.ROOT);
+            if (!state.equals("sheathed") && !state.equals("drawn")) {
+                return null;
+            }
+        }
+        return new CopyStateMapping(source, target, state);
     }
 
     static String normalizeNameArgument(String value) {
