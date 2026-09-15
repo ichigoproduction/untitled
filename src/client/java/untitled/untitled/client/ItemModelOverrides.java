@@ -67,7 +67,7 @@ public final class ItemModelOverrides {
         loadSettings();
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(
-                    literal("model")
+                    literal("imodel")
                             .then(literal("remove")
                                     .then(argument("name", StringArgumentType.string())
                                             .executes(context -> removeRule(
@@ -89,7 +89,7 @@ public final class ItemModelOverrides {
             );
 
             dispatcher.register(
-                    literal("modelcopy")
+                    literal("imodelcopy")
                             .then(argument("name", StringArgumentType.string())
                                     .executes(context -> copyHeldModel(
                                             context.getSource(),
