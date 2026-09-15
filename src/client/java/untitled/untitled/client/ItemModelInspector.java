@@ -42,7 +42,7 @@ public final class ItemModelInspector {
             held = source.getPlayer().getOffHandStack();
         }
         if (held.isEmpty()) {
-            source.sendError(Text.literal("검사할 아이템을 손에 들어주세요."));
+            source.sendError(Text.literal("Error:15"));
             return 0;
         }
 
@@ -51,20 +51,20 @@ public final class ItemModelInspector {
             Identifier itemId = Registries.ITEM.getId(snapshot.getItem());
             NbtElement encoded = snapshot.toNbt(source.getWorld().getRegistryManager());
             if (!(encoded instanceof NbtCompound stackNbt)) {
-                source.sendError(Text.literal("아이템 NBT 형식이 예상과 다릅니다."));
+                source.sendError(Text.literal("Error:16"));
                 return 0;
             }
             NbtCompound components = stackNbt.getCompound("components");
 
             source.sendFeedback(Text.literal(
-                    "모델 검사: " + snapshot.getName().getString() + " (" + itemId + ")"
+                    "inspect : " + snapshot.getName().getString() + " (" + itemId + ")"
             ));
             source.sendFeedback(Text.literal(
-                    "components: " + components.getSize() + "개"
+                    "components : " + components.getSize()
             ));
 
             if (components.isEmpty()) {
-                source.sendFeedback(Text.literal("- components 없음"));
+                source.sendFeedback(Text.literal("- no components"));
                 return 1;
             }
 
@@ -77,7 +77,7 @@ public final class ItemModelInspector {
             }
             return components.getSize();
         } catch (Exception exception) {
-            source.sendError(Text.literal("아이템 component를 읽지 못했습니다."));
+            source.sendError(Text.literal("Error:17"));
             return 0;
         }
     }
