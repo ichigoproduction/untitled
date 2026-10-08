@@ -9,9 +9,7 @@ import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
-import net.minecraft.text.Text;
 
-import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -65,34 +63,18 @@ public final class SyringeCooldownHud {
                         .then(literal("toggle").executes(context -> {
                             enabled = !enabled;
                             EditHud.saveSettings();
-                            context.getSource().sendFeedback(Text.literal(
-                                    "syringe HUD : " + (enabled ? "ON" : "OFF")
-                            ));
                             return 1;
                         }))
                         .then(literal("size")
-                                .executes(context -> {
-                                    context.getSource().sendFeedback(Text.literal(
-                                            "syringe HUD size : " + formatScale(scale) + "x"
-                                    ));
-                                    return 1;
-                                })
                                 .then(argument("scale", FloatArgumentType.floatArg(MIN_SCALE, MAX_SCALE))
                                         .executes(context -> {
                                             scale = FloatArgumentType.getFloat(context, "scale");
                                             clampOffsetsToScreen();
                                             EditHud.saveSettings();
-                                            context.getSource().sendFeedback(Text.literal(
-                                                    "syringe HUD size : " + formatScale(scale) + "x"
-                                            ));
                                             return 1;
                                         })))
                 )
         );
-    }
-
-    private static String formatScale(float value) {
-        return String.format(Locale.ROOT, "%.2f", value);
     }
 
     private static void tickConnection(MinecraftClient client) {
