@@ -24,7 +24,8 @@ public final class EditHud extends Screen {
         NONE,
         PARTY,
         FOOD,
-        DRINK
+        DRINK,
+        SYRINGE
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -66,6 +67,7 @@ public final class EditHud extends Screen {
                         .then(literal("reset").executes(context -> {
                             PartyHud.resetPosition();
                             FoodStack.resetPositions();
+                            SyringeCooldownHud.resetPosition();
                             saveSettings();
                             return 1;
                         }))
@@ -96,10 +98,12 @@ public final class EditHud extends Screen {
         PartyHud.renderEditorPreview(context);
         FoodStack.renderFoodEditorPreview(context);
         FoodStack.renderDrinkEditorPreview(context);
+        SyringeCooldownHud.renderEditorPreview(context);
 
         HudBounds partyBounds = PartyHud.getEditorBounds();
         HudBounds foodBounds = FoodStack.getFoodEditorBounds();
         HudBounds drinkBounds = FoodStack.getDrinkEditorBounds();
+        HudBounds syringeBounds = SyringeCooldownHud.getEditorBounds();
 
         drawSelectionBox(
                 context,
@@ -115,6 +119,11 @@ public final class EditHud extends Screen {
                 context,
                 drinkBounds,
                 dragTarget == DragTarget.DRINK || drinkBounds.contains(mouseX, mouseY)
+        );
+        drawSelectionBox(
+                context,
+                syringeBounds,
+                dragTarget == DragTarget.SYRINGE || syringeBounds.contains(mouseX, mouseY)
         );
 
         super.render(context, mouseX, mouseY, delta);
@@ -136,6 +145,11 @@ public final class EditHud extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            // The syringe preview is drawn on top, so it gets first chance at a click.
+            if (SyringeCooldownHud.getEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.SYRINGE;
+                return true;
+            }
             if (PartyHud.getEditorBounds().contains(mouseX, mouseY)) {
                 dragTarget = DragTarget.PARTY;
                 return true;
@@ -170,6 +184,8 @@ public final class EditHud extends Screen {
                 FoodStack.moveFoodBy(moveX, moveY);
             } else if (dragTarget == DragTarget.DRINK) {
                 FoodStack.moveDrinkBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.SYRINGE) {
+                SyringeCooldownHud.moveBy(moveX, moveY);
             }
             return true;
         }
@@ -218,6 +234,7 @@ public final class EditHud extends Screen {
             PartyHud.setOffsets(partyX, partyY);
             PartyHud.readSettings(root);
             FoodStack.readSettings(root);
+            SyringeCooldownHud.readSettings(root);
         } catch (Exception ignored) {
         }
     }
@@ -231,6 +248,7 @@ public final class EditHud extends Screen {
             root.addProperty("partyOffsetY", PartyHud.getOffsetY());
             PartyHud.writeSettings(root);
             FoodStack.writeSettings(root);
+            SyringeCooldownHud.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
                     CONFIG_PATH,
