@@ -19,7 +19,6 @@ import java.util.regex.Pattern;
 
 public final class FoodStack {
     private static final int FOOD_SEGMENTS = 3;
-    private static final int FOOD_TRIGGER_EVERY = 4;
     private static final int DRINK_SEGMENTS = 1;
     private static final int DRINK_TRIGGER_EVERY = 2;
 
@@ -67,6 +66,7 @@ public final class FoodStack {
 
     private static String lastSignal = "";
     private static long dedupeUntilMs = 0L;
+    private static long suppressNextFoodConsumptionUntilMs = 0L;
     private static String pendingConsumptionSignal = "";
     private static long pendingConsumptionUntilMs = 0L;
     private static RegistryKey<World> lastWorldKey = null;
@@ -386,6 +386,14 @@ public final class FoodStack {
     private static void onIncomingMessage(String raw) {
         String clean = normalize(raw);
         handleRetryMessage(clean);
+        if (clean.contains("음식 버프 적용!")) {
+            resetFoodStack();
+            clearPendingConsumption();
+            // The buff message can arrive before the consumption details.
+            suppressNextFoodConsumptionUntilMs =
+                    System.currentTimeMillis() + CONSUMPTION_CLASSIFY_WINDOW_MS;
+            return;
+        }
         handleConsumptionMessage(clean);
     }
 
@@ -451,6 +459,11 @@ public final class FoodStack {
             String signalSource,
             long now
     ) {
+        if (type == ConsumptionType.FOOD && now <= suppressNextFoodConsumptionUntilMs) {
+            suppressNextFoodConsumptionUntilMs = 0L;
+            return;
+        }
+
         String signal = type.name() + "|" + signalSource;
         if (signal.equals(lastSignal) && now < dedupeUntilMs) {
             return;
@@ -463,7 +476,7 @@ public final class FoodStack {
         if (type == ConsumptionType.DRINK) {
             drinkStack = nextStack(drinkStack, DRINK_TRIGGER_EVERY, DRINK_SEGMENTS);
         } else {
-            foodStack = nextStack(foodStack, FOOD_TRIGGER_EVERY, FOOD_SEGMENTS);
+            foodStack = Math.min(foodStack + 1, FOOD_SEGMENTS);
         }
     }
 
@@ -514,6 +527,7 @@ public final class FoodStack {
     private static void resetAllStacks() {
         foodStack = 0;
         drinkStack = 0;
+        suppressNextFoodConsumptionUntilMs = 0L;
         lastSignal = "";
         dedupeUntilMs = 0L;
         clearPendingConsumption();
