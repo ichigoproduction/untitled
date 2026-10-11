@@ -68,7 +68,8 @@ public final class FoodStack {
 
     private static String lastSignal = "";
     private static long dedupeUntilMs = 0L;
-    private static long suppressNextFoodConsumptionUntilMs = 0L;
+    // A buff message can arrive through multiple message callbacks.
+    private static long lastBuffResetMs = 0L;
     private static String pendingConsumptionSignal = "";
     private static long pendingConsumptionUntilMs = 0L;
     private static RegistryKey<World> lastWorldKey = null;
@@ -419,11 +420,18 @@ public final class FoodStack {
         String clean = normalize(raw);
         handleRetryMessage(clean);
         if (clean.contains("음식 버프 적용!")) {
+            long now = System.currentTimeMillis();
+            // If chat and game callbacks deliver the same buff event twice,
+            // the duplicate must not erase a genuine new stack in between.
+            if (lastBuffResetMs != 0L && now - lastBuffResetMs < DEDUPE_WINDOW_MS) {
+                return;
+            }
+            lastBuffResetMs = now;
             resetFoodStack();
+            // Only abandon a consumption sequence already pending before
+            // the buff. Do not suppress the next complete food event:
+            // the player may have eaten again immediately after activation.
             clearPendingConsumption();
-            // The buff message can arrive before the consumption details.
-            suppressNextFoodConsumptionUntilMs =
-                    System.currentTimeMillis() + CONSUMPTION_CLASSIFY_WINDOW_MS;
             return;
         }
         handleConsumptionMessage(clean);
@@ -491,11 +499,6 @@ public final class FoodStack {
             String signalSource,
             long now
     ) {
-        if (type == ConsumptionType.FOOD && now <= suppressNextFoodConsumptionUntilMs) {
-            suppressNextFoodConsumptionUntilMs = 0L;
-            return;
-        }
-
         String signal = type.name() + "|" + signalSource;
         if (signal.equals(lastSignal) && now < dedupeUntilMs) {
             return;
@@ -559,7 +562,7 @@ public final class FoodStack {
     private static void resetAllStacks() {
         foodStack = 0;
         drinkStack = 0;
-        suppressNextFoodConsumptionUntilMs = 0L;
+        lastBuffResetMs = 0L;
         lastSignal = "";
         dedupeUntilMs = 0L;
         clearPendingConsumption();
