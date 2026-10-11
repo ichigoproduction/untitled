@@ -45,6 +45,9 @@ public final class SkillHud {
     private static final Pattern SECONDS =
             Pattern.compile("(?<!\\d)(\\d{1,4})\\s*(?:초|s)(?![a-zA-Z])");
     private static final long SECOND = 1_000_000_000L;
+    // Display 0s for one second after the countdown completes.
+    // This affects only the presentation, not the server-aligned expiry.
+    private static final long ZERO_DISPLAY_DURATION = SECOND;
     // Observed 0.65s correction was ~0.25s late; 0.90s is a trial value.
     private static final long SERVER_READY_CORRECTION = 900_000_000L;
     // Receiving the same packet through packet/HUD/Fabric hooks must not
@@ -407,15 +410,19 @@ public final class SkillHud {
     }
 
     private static int secondsLeft(Skill skill) {
-        long left = EXPIRY.getOrDefault(skill.key(), 0L) - System.nanoTime();
-        return left <= 0 ? 0 : (int) ((left + SECOND - 1) / SECOND);
+        Long expiry = EXPIRY.get(skill.key());
+        if (expiry == null) return -1; // Never started: do not show 0s.
+        long left = expiry - System.nanoTime();
+        if (left > 0) return (int) ((left + SECOND - 1) / SECOND);
+        // Keep 0s briefly visible, then remove the line as before.
+        return left > -ZERO_DISPLAY_DURATION ? 0 : -1;
     }
 
     private static List<String> activeLines() {
         List<String> result = new ArrayList<>();
         for (Skill skill : CATALOG_SKILLS.values()) {
             int seconds = secondsLeft(skill);
-            if (isVisible(skill.key()) && seconds > 0) {
+            if (isVisible(skill.key()) && seconds >= 0) {
                 result.add(skill.name() + " " + seconds + "s");
             }
         }
