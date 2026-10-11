@@ -7,6 +7,7 @@ import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -18,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -43,7 +45,7 @@ public final class SkillHud {
     private static final Pattern SECONDS =
             Pattern.compile("(?<!\\d)(\\d{1,4})\\s*(?:초|s)(?![a-zA-Z])");
     private static final long SECOND = 1_000_000_000L;
-    private static final long SERVER_READY_CORRECTION = SECOND;
+    private static final long SERVER_READY_CORRECTION = SECOND / 2;
     private static final int GAP = 3;
     private static final int MARGIN = 3;
     private static final int DEFAULT_Y = 80;
@@ -67,6 +69,11 @@ public final class SkillHud {
 
         HudRenderCallback.EVENT.register((context, ticks) -> renderHud(context));
         ClientTickEvents.END_CLIENT_TICK.register(SkillHud::tickConnection);
+        // Some servers/mods route overlay text through Fabric GAME callbacks
+        // instead of, or in addition to, the dedicated HUD overlay setter.
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
+            if (overlay) onHudText(message);
+        });
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
             var root = literal("sh")
@@ -209,8 +216,25 @@ public final class SkillHud {
     public static void onHudText(Text text) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (text == null || client.player == null || client.world == null) return;
-        String content = text.getString().replace('\u00A0', ' ').trim();
+        String content = normalizeActionbar(text.getString());
         if (!content.isEmpty()) onActionbar(content);
+    }
+
+    /**
+     * A resource pack can insert invisible formatting and private-use glyphs
+     * between Hangul characters. Strip these for recognition; keep actual
+     * Korean text and ASCII digits so trigger names remain detectable.
+     */
+    private static String normalizeActionbar(String raw) {
+        StringBuilder out = new StringBuilder(raw.length());
+        raw.codePoints().forEach(cp -> {
+            int kind = Character.getType(cp);
+            if (kind != Character.PRIVATE_USE && kind != Character.FORMAT
+                    && !Character.isISOControl(cp)) {
+                out.appendCodePoint(cp == 0xA0 ? ' ' : cp);
+            }
+        });
+        return Normalizer.normalize(out, Normalizer.Form.NFC).trim();
     }
 
     private static void onActionbar(String message) {
@@ -256,13 +280,24 @@ public final class SkillHud {
             }
 
             if (serverSeconds != null) {
+                // A skill-specific countdown from the server has priority.
                 setExpiry(match, now, serverSeconds);
-            } else if (!message.contains("쿨타임")
-                    && EXPIRY.getOrDefault(match.key(), 0L) <= now) {
-                // Repeated success actionbars must not restart an active timer.
+            } else if (EXPIRY.getOrDefault(match.key(), 0L) <= now
+                    && !isCooldownRejection(message)) {
+                // Do not reject every message containing "쿨타임"; some
+                // successful casts include that word as part of a HUD label.
                 setExpiry(match, now, match.cooldown());
             }
         }
+    }
+
+    /** A cooldown rejection without a numeric remainder is not a cast. */
+    private static boolean isCooldownRejection(String message) {
+        return message.contains("쿨타임 중")
+                || message.contains("쿨타임이 남")
+                || message.contains("재사용 대기")
+                || message.contains("사용할 수 없")
+                || message.contains("아직 사용할 수 없");
     }
 
     /**
@@ -318,9 +353,8 @@ public final class SkillHud {
     }
 
     private static void setExpiry(Skill skill, long now, int seconds) {
-        // On this server the skill becomes usable while the previous local
-        // timer still displays 1s. Account for the observed ~1s offset in
-        // the *deadline*, rather than just hiding the final number.
+        // A full 1s adjustment was observed to end one second too early;
+        // start with the midpoint (0.5s) as a provisional server alignment.
         long correctedDuration = Math.max(0L,
                 seconds * SECOND - SERVER_READY_CORRECTION);
         if (correctedDuration == 0L) {
