@@ -46,6 +46,7 @@ public final class SkillHud {
             Pattern.compile("(?<!\\d)(\\d{1,4})\\s*(?:초|s)(?![a-zA-Z])");
     private static final long SECOND = 1_000_000_000L;
     private static final long SERVER_READY_CORRECTION = SECOND / 2;
+    private static final long RECAST_GRACE = 750_000_000L;
     private static final int GAP = 3;
     private static final int MARGIN = 3;
     private static final int DEFAULT_Y = 80;
@@ -282,10 +283,12 @@ public final class SkillHud {
             if (serverSeconds != null) {
                 // A skill-specific countdown from the server has priority.
                 setExpiry(match, now, serverSeconds);
-            } else if (EXPIRY.getOrDefault(match.key(), 0L) <= now
-                    && !isCooldownRejection(message)) {
-                // Do not reject every message containing "쿨타임"; some
-                // successful casts include that word as part of a HUD label.
+            } else if (!isCooldownRejection(message)
+                    && EXPIRY.getOrDefault(match.key(), 0L) <= now + RECAST_GRACE) {
+                // A genuine recast can arrive just before our local clock
+                // expires; the server may already have accepted it. Re-arm
+                // near expiry, but ignore repeated success packets during
+                // the main cooldown window.
                 setExpiry(match, now, match.cooldown());
             }
         }
