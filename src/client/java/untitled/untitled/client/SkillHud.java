@@ -51,12 +51,21 @@ public final class SkillHud {
     // process one cast multiple times (distinct rapid casts are unaffected).
     private static final long DUPLICATE_WINDOW = 150_000_000L;
     private static final long RECAST_GRACE = 750_000_000L;
+    // Two crouch key-down events in this interval mean double-Shift.
+    private static final long DOUBLE_SNEAK_WINDOW = 450_000_000L;
+    // A speculative input timer starts on the key press, not on a delayed
+    // server actionbar. Do not apply the receive-time correction twice.
+    private static final long INPUT_READY_CORRECTION = 0L;
+
     private static final int GAP = 3;
     private static final int MARGIN = 3;
     private static final int DEFAULT_Y = 80;
     private static final Map<String, Skill> CATALOG_SKILLS = new LinkedHashMap<>();
     private static final Map<String, Boolean> VISIBLE = new LinkedHashMap<>();
     private static final Map<String, Long> EXPIRY = new HashMap<>();
+    private static final Map<String, Long> PREDICTED_SINCE = new HashMap<>();
+    private static final Map<String, String> KNOWN_WEAPONS = new LinkedHashMap<>();
+
 
     private static boolean initialized;
     private static boolean enabled = true;
@@ -65,6 +74,9 @@ public final class SkillHud {
     private static ClientPlayNetworkHandler lastConnection;
     private static String lastActionbar = "";
     private static long lastActionbarNano;
+    private static long lastSneakPressNano;
+    private static String lastSneakHeld = "";
+
     private static EditHud.HudBounds editorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private SkillHud() {}
@@ -180,6 +192,7 @@ public final class SkillHud {
 
     private static void loadCatalog() {
         CATALOG_SKILLS.clear();
+        KNOWN_WEAPONS.clear();
         try (InputStream input = SkillHud.class.getResourceAsStream(CATALOG)) {
             if (input == null) {
                 LOG.warn("Missing skill catalog {}", CATALOG);
@@ -204,6 +217,7 @@ public final class SkillHud {
                     if (!id.matches("[a-zA-Z0-9_]+") || id.equals("global")
                             || item.isEmpty() || !sword.has("skills")
                             || !sword.get("skills").isJsonObject()) continue;
+                    KNOWN_WEAPONS.put(id, item);
                     JsonObject slots = sword.getAsJsonObject("skills");
                     for (String slot : WEAPON_SLOTS) {
                         if (slots.has(slot) && slots.get(slot).isJsonObject()) {
@@ -215,8 +229,90 @@ public final class SkillHud {
         } catch (Exception e) {
             LOG.warn("Cannot load skill catalog", e);
             CATALOG_SKILLS.clear();
+            KNOWN_WEAPONS.clear();
         }
         LOG.info("Loaded {} skill definitions", CATALOG_SKILLS.size());
+    }
+
+    /**
+     * Predict a cooldown from actual local controls when a successful
+     * server actionbar might be overwritten before it reaches the player.
+     * This is not proof of server-side activation: the HUD marks it '?'.
+     */
+    public static void onAttackInput(MinecraftClient client) {
+        if (!canTrackInput(client)) return;
+        String slot = client.options.sneakKey.isPressed() || client.player.isSneaking()
+                ? "sl" : "l";
+        predictInput(client, slot);
+    }
+
+    public static void onUseInput(MinecraftClient client) {
+        if (!canTrackInput(client)) return;
+        String slot = client.options.sneakKey.isPressed() || client.player.isSneaking()
+                ? "sr" : "r";
+        predictInput(client, slot);
+    }
+
+    /** Direct keyboard hook catches two quick taps within a single tick. */
+    public static void onKeyInput(long window, int keyCode, int scanCode, int action) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (!canTrackInput(client) || client.getWindow().getHandle() != window
+                || action != 1 || !client.options.sneakKey.matchesKey(keyCode, scanCode)) {
+            return;
+        }
+        String held = normalizeActionbar(client.player.getMainHandStack().getName().getString());
+        long now = System.nanoTime();
+        if (lastSneakPressNano > 0
+                && now - lastSneakPressNano <= DOUBLE_SNEAK_WINDOW
+                && held.equals(lastSneakHeld)) {
+            lastSneakPressNano = 0L;
+            predictInput(client, "ss");
+        } else {
+            lastSneakHeld = held;
+            lastSneakPressNano = now;
+        }
+    }
+
+    private static boolean canTrackInput(MinecraftClient client) {
+        return client != null && client.player != null && client.world != null
+                && client.currentScreen == null && !client.player.isSpectator()
+                && !client.player.getMainHandStack().isEmpty();
+    }
+
+    private static void predictInput(MinecraftClient client, String slot) {
+        String held = normalizeActionbar(client.player.getMainHandStack().getName().getString());
+        Skill candidate = null;
+        if ("r".equals(slot)) {
+            // Shared leap is available on every registered sword, even when
+            // that sword has no other skills in the catalog yet.
+            for (String name : KNOWN_WEAPONS.values()) {
+                if (matchesWeapon(held, name)) {
+                    candidate = CATALOG_SKILLS.get("global|r");
+                    break;
+                }
+            }
+        } else {
+            for (Skill skill : CATALOG_SKILLS.values()) {
+                if (!skill.slot().equals(slot) || skill.sword().equals("global")
+                        || !matchesWeapon(held, skill.itemName())) continue;
+                if (candidate != null) return; // Ambiguous weapon identity.
+                candidate = skill;
+            }
+        }
+        if (candidate == null) return;
+        long now = System.nanoTime();
+        long expiry = EXPIRY.getOrDefault(candidate.key(), 0L);
+        if (expiry > now + RECAST_GRACE) return; // Still on known cooldown.
+        long duration = Math.max(0L,
+                candidate.cooldown() * SECOND - INPUT_READY_CORRECTION);
+        if (duration <= 0L) return;
+        EXPIRY.put(candidate.key(), now + duration);
+        PREDICTED_SINCE.put(candidate.key(), now);
+    }
+
+    private static boolean matchesWeapon(String held, String configured) {
+        String expected = normalizeActionbar(configured);
+        return !expected.isEmpty() && held.contains(expected);
     }
 
     /** Receives the actionbar text through the HUD mixin, including dedicated overlay packets. */
@@ -288,15 +384,26 @@ public final class SkillHud {
             Integer serverSeconds = distinctTriggers == 1
                     ? readSkillSeconds(message, match) : null;
 
-            if (serverSeconds != null) {
-                // A skill-specific countdown from the server has priority.
+            String id = match.key();
+            Long predictedAt = PREDICTED_SINCE.get(id);
+            if (isCooldownRejection(message)) {
+                // A rejected local key press must not remain a confirmed
+                // cooldown. When the server gives remaining seconds, use
+                // them; otherwise drop the unconfirmed prediction.
+                if (predictedAt != null && now - predictedAt <= 3 * SECOND) {
+                    PREDICTED_SINCE.remove(id);
+                    if (serverSeconds == null) EXPIRY.remove(id);
+                }
+                if (serverSeconds != null) setExpiry(match, now, serverSeconds);
+            } else if (predictedAt != null && EXPIRY.getOrDefault(id, 0L) > now) {
+                // A late success actionbar confirms the input, but must not
+                // restart the already running timer from the receive time.
+                PREDICTED_SINCE.remove(id);
+            } else if (serverSeconds != null) {
                 setExpiry(match, now, serverSeconds);
-            } else if (!isCooldownRejection(message)
-                    && EXPIRY.getOrDefault(match.key(), 0L) <= now + RECAST_GRACE) {
-                // A genuine recast can arrive just before our local clock
-                // expires; the server may already have accepted it. Re-arm
-                // near expiry, but ignore repeated success packets during
-                // the main cooldown window.
+            } else if (EXPIRY.getOrDefault(id, 0L) <= now + RECAST_GRACE) {
+                // Fallback for commands / weapons the local input did not
+                // identify. Avoid resetting an already running cooldown.
                 setExpiry(match, now, match.cooldown());
             }
         }
@@ -387,6 +494,7 @@ public final class SkillHud {
         // start with the midpoint (0.5s) as a provisional server alignment.
         long correctedDuration = Math.max(0L,
                 seconds * SECOND - SERVER_READY_CORRECTION);
+        PREDICTED_SINCE.remove(skill.key());
         if (correctedDuration == 0L) {
             EXPIRY.remove(skill.key());
         } else {
@@ -399,8 +507,11 @@ public final class SkillHud {
         if (current != lastConnection) {
             if (lastConnection != null) {
                 EXPIRY.clear();
+                PREDICTED_SINCE.clear();
                 lastActionbar = "";
                 lastActionbarNano = 0L;
+                lastSneakPressNano = 0L;
+                lastSneakHeld = "";
             }
             lastConnection = current;
         }
@@ -416,7 +527,8 @@ public final class SkillHud {
         for (Skill skill : CATALOG_SKILLS.values()) {
             int seconds = secondsLeft(skill);
             if (isVisible(skill.key()) && seconds > 0) {
-                result.add(skill.name() + " " + seconds + "s");
+                String suffix = PREDICTED_SINCE.containsKey(skill.key()) ? "?" : "";
+                result.add(skill.name() + suffix + " " + seconds + "s");
             }
         }
         return result;
