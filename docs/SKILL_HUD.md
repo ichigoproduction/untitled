@@ -1,12 +1,15 @@
 # Skill HUD setup
 
-This is a first-stage implementation. The skill catalog is intentionally empty:
-real sword IDs, skill names, actionbar triggers and cooldowns are not yet known.
-The debug command is for collecting that information accurately.
+This is a first-stage implementation. Fourteen sword IDs have been registered.
+Five skills (sword6 and sword7) use user-supplied names and cooldowns, with
+provisional actionbar triggers based on literal skill names. The debug command
+collects the actual actionbar strings to validate those triggers.
 
 ## Commands
 
 - /sh debug : toggle actionbar diagnostics (chat plus logs/latest.log)
+- /sh test sword7 sl : manually start the registered skill's cooldown timer.
+  This does NOT activate the server skill; enable HUD visibility separately if off.
 - /sh sword1 all toggle : enable/disable l, sl, sr, ss for sword1 as a group
 - /sh sword1 sl toggle : toggle just the Shift+left skill
 - /sh sword1 l toggle : toggle just the normal left skill
@@ -26,7 +29,12 @@ has no skill catalog entry yet; selection preferences survive future updates.
 ## Development catalog
 
 File: src/main/resources/assets/untitled/skill_catalog.json
-This is bundled into the mod JAR and must be populated during development.
+This is bundled into the mod JAR. Currently defined:
+- sword6 (타이달리스): sl 창람 8s, sr 파참 12s
+- sword7 (츠바이핸더): sl 섬멸 9s, sr 철벽돌파 10s, ss 폭풍참격 11s
+The triggers currently equal the literal skill names. If the server sends
+resource-pack-specific glyphs instead, automatic detection will NOT work until
+/sh debug reveals suitable raw text to use as triggers.
 User visibility and HUD position are saved independently in config/152_hud.json.
 
 Example only, NOT verified server data:
@@ -59,6 +67,7 @@ without additional context; do not infer which cooldown they belong to.
    duration per skill. Private-use Unicode glyphs are printed as \u{XXXX}.
 4. Populate catalog, rebuild, and enable selected slots.
 
-Timers do not run for unknown/unregistered skills; the catalog has no
-fabricated times or mappings. Timer state resets on disconnect, and selection
+Timers do not run for unknown/unregistered skills, and no unknown durations
+have been invented. The /sh test command starts a timer for a registered skill
+only. Timer state resets on disconnect, and selection
 preferences remain saved. Debug can be noisy; turn it off after sampling.

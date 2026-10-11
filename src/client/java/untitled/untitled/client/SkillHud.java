@@ -75,6 +75,13 @@ public final class SkillHud {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
             var root = literal("sh")
+                    .then(literal("test")
+                            .then(argument("sword", StringArgumentType.word())
+                                    .then(argument("slot", StringArgumentType.word())
+                                            .executes(ctx -> testSkill(
+                                                    StringArgumentType.getString(ctx, "sword"),
+                                                    StringArgumentType.getString(ctx, "slot"),
+                                                    ctx.getSource())))))
                     .then(literal("debug").executes(ctx -> {
                         debug = !debug;
                         lastDebugText = "";
@@ -133,6 +140,24 @@ public final class SkillHud {
 
     private static boolean isVisible(String key) {
         return VISIBLE.getOrDefault(key, false);
+    }
+
+    private static int testSkill(
+            String sword, String slot,
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
+    ) {
+        String id = key(sword, slot);
+        Skill skill = CATALOG_SKILLS.get(id);
+        if (skill == null) {
+            source.sendError(Text.literal("[SH] 등록된 스킬이 없습니다: " + sword + " " + slot));
+            return 0;
+        }
+        // A diagnostic timer only; this does not activate a real server skill.
+        EXPIRY.put(id, System.nanoTime() + skill.cooldown() * SECOND);
+        source.sendFeedback(Text.literal("[SH] 테스트 타이머: " + skill.name()
+                + " " + skill.cooldown() + "s"
+                + (isVisible(id) ? "" : " (HUD OFF: /sh " + sword + " " + slot + " toggle)")));
+        return 1;
     }
 
     private static int toggleSlot(String sword, String slot) {

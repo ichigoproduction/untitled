@@ -29,12 +29,39 @@
     {
       "id": "sword6",
       "item_name": "타이달리스",
-      "skills": {}
+      "skills": {
+        "sl": {
+          "name": "창람",
+          "trigger": "창람",
+          "cooldown": 8
+        },
+        "sr": {
+          "name": "파참",
+          "trigger": "파참",
+          "cooldown": 12
+        }
+      }
     },
     {
       "id": "sword7",
       "item_name": "츠바이핸더",
-      "skills": {}
+      "skills": {
+        "sl": {
+          "name": "섬멸",
+          "trigger": "섬멸",
+          "cooldown": 9
+        },
+        "sr": {
+          "name": "철벽돌파",
+          "trigger": "철벽돌파",
+          "cooldown": 10
+        },
+        "ss": {
+          "name": "폭풍참격",
+          "trigger": "폭풍참격",
+          "cooldown": 11
+        }
+      }
     },
     {
       "id": "sword8",
