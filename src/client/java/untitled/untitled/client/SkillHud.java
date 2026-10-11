@@ -60,6 +60,8 @@ public final class SkillHud {
     private static String lastHudChannel = "none";
     private static long lastHudNano = 0L;
     private static long lastDebugTime;
+    private static String lastMatchDiagnostic = "";
+    private static long lastMatchDiagnosticTime;
     private static EditHud.HudBounds editorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private SkillHud() {}
@@ -74,6 +76,13 @@ public final class SkillHud {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
             var root = literal("sh")
+                    .then(literal("held").executes(ctx -> {
+                        String itemName = ctx.getSource().getPlayer().getMainHandStack()
+                                .getName().getString();
+                        ctx.getSource().sendFeedback(Text.literal(
+                                "[SH] 현재 손에 든 아이템 이름: " + itemName));
+                        return 1;
+                    }))
                     .then(literal("status").executes(ctx -> status(ctx.getSource())))
                     .then(literal("on").executes(ctx -> setHudEnabled(true, ctx.getSource())))
                     .then(literal("off").executes(ctx -> setHudEnabled(false, ctx.getSource())))
@@ -327,14 +336,64 @@ public final class SkillHud {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
+        // Some servers decorate or dynamically rename weapons. Matching only
+        // the exact held item name suppresses valid skill actionbars even if
+        // the skill name is clearly present (and /sh test works).
         String held = client.player.getMainHandStack().getName().getString();
         Skill match = null;
+        Skill exactMatch = null;
+        Skill containsMatch = null;
+        Skill lastTriggered = null;
+        int exactCount = 0;
+        int containsCount = 0;
+        int triggerCount = 0;
+        int longestTrigger = 0;
+
+        // A long skill name may contain a shorter skill name. Select the most
+        // specific matching trigger before resolving the sword identity.
         for (Skill skill : CATALOG_SKILLS.values()) {
-            if (!skill.sword().equals("global") && !skill.itemName().equals(held)) continue;
-            if (message.contains(skill.trigger()) && (match == null
-                    || skill.trigger().length() > match.trigger().length())) match = skill;
+            if (message.contains(skill.trigger())) {
+                longestTrigger = Math.max(longestTrigger, skill.trigger().length());
+            }
         }
-        if (match == null) return;
+        if (longestTrigger == 0) return;
+
+        for (Skill skill : CATALOG_SKILLS.values()) {
+            if (skill.trigger().length() != longestTrigger
+                    || !message.contains(skill.trigger())) continue;
+            triggerCount++;
+            lastTriggered = skill;
+            if (skill.sword().equals("global") || skill.itemName().equals(held)) {
+                exactCount++;
+                exactMatch = skill;
+            } else if (!held.isEmpty() && held.contains(skill.itemName())) {
+                containsCount++;
+                containsMatch = skill;
+            }
+        }
+
+        String matchType = "no match";
+        if (exactCount == 1) {
+            match = exactMatch;
+            matchType = "exact";
+        } else if (exactCount == 0 && containsCount == 1) {
+            match = containsMatch;
+            matchType = "display-name contains";
+        } else if (exactCount == 0 && containsCount == 0 && triggerCount == 1) {
+            // Only one registered skill in the entire catalog has this trigger;
+            // accepting it is safer than requiring an item display name that
+            // may change with server plugins. Never guess if names collide.
+            match = lastTriggered;
+            matchType = "unique actionbar trigger";
+        } else {
+            matchType = "ambiguous (" + triggerCount + " skill trigger matches)";
+        }
+        if (match == null) {
+            traceMatch(client, "SKIPPED " + matchType + " | held: " + held);
+            return;
+        }
+        traceMatch(client, "MATCH " + match.sword() + " " + match.slot()
+                + " " + match.name() + " via " + matchType + " | held: " + held);
 
         long now = System.nanoTime();
         Matcher matcher = SECONDS.matcher(message);
@@ -343,10 +402,22 @@ public final class SkillHud {
                 int seconds = Integer.parseInt(matcher.group(1));
                 if (seconds <= 3600) EXPIRY.put(match.key(), now + seconds * SECOND);
             } catch (NumberFormatException ignored) {}
-        } else if (EXPIRY.getOrDefault(match.key(), 0L) <= now) {
+        } else if (!message.contains("쿨타임")
+                && EXPIRY.getOrDefault(match.key(), 0L) <= now) {
             // Repeated success actionbars must not restart an active cooldown.
             EXPIRY.put(match.key(), now + match.cooldown() * SECOND);
         }
+    }
+
+    private static void traceMatch(MinecraftClient client, String message) {
+        if (!debug || client.player == null) return;
+        long now = System.nanoTime();
+        if (message.equals(lastMatchDiagnostic)
+                && now - lastMatchDiagnosticTime < 2 * SECOND) return;
+        lastMatchDiagnostic = message;
+        lastMatchDiagnosticTime = now;
+        client.player.sendMessage(Text.literal("[SH] " + message), false);
+        LOG.info("SKILL_HUD {}", message);
     }
 
     private static void debugMessage(

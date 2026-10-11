@@ -7,7 +7,8 @@ collects the actual actionbar strings to validate those triggers.
 
 ## Commands
 
-- /sh debug : toggle actionbar diagnostics (chat plus logs/latest.log)
+- /sh debug : toggle actionbar diagnostics (chat plus logs/latest.log), including MATCH/SKIPPED decisions
+- /sh held : inspect the actual display name of the equipped weapon
 - /sh test sword7 sl : manually start the registered skill's cooldown timer.
   This does NOT activate the server skill; enable HUD visibility separately if off.
 - /sh sword1 all toggle : enable/disable l, sl, sr, ss for sword1 as a group
@@ -53,8 +54,12 @@ Example only, NOT verified server data:
 }
 
 Skill slots: l, sl, sr, ss. The r slot is always global.
-The game item display name must exactly match item_name. The trigger is an
-exact actionbar substring. Duplicate success messages do not restart an
+Ambiguous actionbar skill names are never guessed: exact held name wins,
+then contained held name, then a unique matching actionbar trigger. A
+longer matching trigger takes priority over shorter contained names.
+The trigger is an exact actionbar substring. Weapon item_name is used for
+disambiguation, but if there is exactly one registered skill with that trigger
+the HUD also works when the server changes/decorates its item display name. Duplicate success messages do not restart an
 already active timer. A message containing the trigger plus e.g. 5초 or 5s
 corrects remaining time. Numeric-only messages cannot be assigned to a skill
 without additional context; do not infer which cooldown they belong to.
