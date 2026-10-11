@@ -8,7 +8,8 @@
     "DrawContextMixin",
     "MinecraftClientMixin",
     "PlayerEntityRendererMixin",
-    "SkillHudMessageMixin"
+    "SkillHudMessageMixin",
+    "SkillHudPacketMixin"
   ],
   "injectors": {
     "defaultRequire": 1

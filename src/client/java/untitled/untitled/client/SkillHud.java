@@ -45,7 +45,11 @@ public final class SkillHud {
     private static final Pattern SECONDS =
             Pattern.compile("(?<!\\d)(\\d{1,4})\\s*(?:초|s)(?![a-zA-Z])");
     private static final long SECOND = 1_000_000_000L;
-    private static final long SERVER_READY_CORRECTION = SECOND / 2;
+    // Empirical 0.5s correction was slightly late; 1.0s was too early.
+    private static final long SERVER_READY_CORRECTION = 650_000_000L;
+    // Receiving the same packet through packet/HUD/Fabric hooks must not
+    // process one cast multiple times (distinct rapid casts are unaffected).
+    private static final long DUPLICATE_WINDOW = 150_000_000L;
     private static final long RECAST_GRACE = 750_000_000L;
     private static final int GAP = 3;
     private static final int MARGIN = 3;
@@ -59,6 +63,8 @@ public final class SkillHud {
     private static float scale = 1.0f;
     private static int offsetX, offsetY;
     private static ClientPlayNetworkHandler lastConnection;
+    private static String lastActionbar = "";
+    private static long lastActionbarNano;
     private static EditHud.HudBounds editorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private SkillHud() {}
@@ -218,7 +224,15 @@ public final class SkillHud {
         MinecraftClient client = MinecraftClient.getInstance();
         if (text == null || client.player == null || client.world == null) return;
         String content = normalizeActionbar(text.getString());
-        if (!content.isEmpty()) onActionbar(content);
+        if (content.isEmpty()) return;
+        long now = System.nanoTime();
+        // The same overlay is observable at three different interception
+        // points. Do not mistake these duplicate callbacks for separate casts.
+        if (content.equals(lastActionbar)
+                && now - lastActionbarNano < DUPLICATE_WINDOW) return;
+        lastActionbar = content;
+        lastActionbarNano = now;
+        onActionbar(content);
     }
 
     /**
@@ -246,7 +260,7 @@ public final class SkillHud {
         // by trigger and process each distinct trigger independently.
         Map<String, List<Skill>> byTrigger = new LinkedHashMap<>();
         for (Skill skill : CATALOG_SKILLS.values()) {
-            if (message.contains(skill.trigger())) {
+            if (skillText.contains(skill.trigger())) {
                 byTrigger.computeIfAbsent(skill.trigger(), ignored -> new ArrayList<>())
                         .add(skill);
             }
@@ -255,30 +269,25 @@ public final class SkillHud {
 
         String held = client.player.getMainHandStack().getName().getString();
         long now = System.nanoTime();
+        // Treat separators injected between Hangul syllables as decorative
+        // while retaining the original text for remaining-time parsing.
+        String skillText = message.replaceAll("\\s+", "");
         int distinctTriggers = 0;
         for (String trigger : byTrigger.keySet()) {
-            if (hasIndependentOccurrence(message, trigger, byTrigger)) {
+            if (hasIndependentOccurrence(skillText, trigger, byTrigger)) {
                 distinctTriggers++;
             }
         }
 
         for (Map.Entry<String, List<Skill>> entry : byTrigger.entrySet()) {
-            if (!hasIndependentOccurrence(message, entry.getKey(), byTrigger)) continue;
+            if (!hasIndependentOccurrence(skillText, entry.getKey(), byTrigger)) continue;
             Skill match = chooseSkill(entry.getValue(), held);
             if (match == null) continue;
 
-            // An unlabelled number in a multi-skill packet cannot safely be
-            // attributed to a specific skill. Prefer per-skill catalog times.
-            Integer serverSeconds = null;
-            if (distinctTriggers == 1) {
-                Matcher matcher = SECONDS.matcher(message);
-                if (matcher.find()) {
-                    try {
-                        int parsed = Integer.parseInt(matcher.group(1));
-                        if (parsed <= 3600) serverSeconds = parsed;
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
+            // Only use remaining seconds that immediately follow the named
+            // skill, not a number belonging to another HUD element or skill.
+            Integer serverSeconds = distinctTriggers == 1
+                    ? readSkillSeconds(message, match) : null;
 
             if (serverSeconds != null) {
                 // A skill-specific countdown from the server has priority.
@@ -291,6 +300,25 @@ public final class SkillHud {
                 // the main cooldown window.
                 setExpiry(match, now, match.cooldown());
             }
+        }
+    }
+
+    /**
+     * Ignore unrelated numbers elsewhere in actionbar text. Only a positive
+     * countdown close to the named skill can correct its local deadline.
+     */
+    private static Integer readSkillSeconds(String message, Skill skill) {
+        int start = message.indexOf(skill.trigger());
+        if (start < 0) return null;
+        int from = start + skill.trigger().length();
+        String suffix = message.substring(from, Math.min(message.length(), from + 32));
+        Matcher match = SECONDS.matcher(suffix);
+        if (!match.find() || match.start() > 16) return null;
+        try {
+            int seconds = Integer.parseInt(match.group(1));
+            return seconds > 0 && seconds <= skill.cooldown() ? seconds : null;
+        } catch (NumberFormatException ignored) {
+            return null;
         }
     }
 
@@ -372,6 +400,8 @@ public final class SkillHud {
         if (current != lastConnection) {
             if (lastConnection != null) {
                 EXPIRY.clear();
+                lastActionbar = "";
+                lastActionbarNano = 0L;
             }
             lastConnection = current;
         }
