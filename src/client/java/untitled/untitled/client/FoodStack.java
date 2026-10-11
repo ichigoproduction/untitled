@@ -18,7 +18,8 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 public final class FoodStack {
-    private static final int FOOD_SEGMENTS = 3;
+    private static final int DEFAULT_FOOD_SEGMENTS = 3;
+    private static final int MAX_FOOD_SEGMENTS = 4;
     private static final int DRINK_SEGMENTS = 1;
     private static final int DRINK_TRIGGER_EVERY = 2;
 
@@ -55,6 +56,7 @@ public final class FoodStack {
     private static boolean foodEnabled = true;
     private static boolean drinkEnabled = true;
     private static boolean foodVerticalLayout = false;
+    private static int foodSegments = DEFAULT_FOOD_SEGMENTS;
 
     private static int foodOffsetX = 0;
     private static int foodOffsetY = 0;
@@ -154,7 +156,7 @@ public final class FoodStack {
                 foodOffsetX,
                 foodOffsetY,
                 foodVerticalLayout,
-                FOOD_SEGMENTS
+                foodSegments
         );
         foodOffsetX = clamped.x;
         foodOffsetY = clamped.y;
@@ -193,8 +195,8 @@ public final class FoodStack {
     static void renderFoodEditorPreview(DrawContext context) {
         lastFoodEditorBounds = renderSegments(
                 context,
-                FOOD_SEGMENTS,
-                FOOD_SEGMENTS,
+                foodSegments,
+                foodSegments,
                 foodOffsetX,
                 foodOffsetY,
                 foodVerticalLayout,
@@ -217,6 +219,7 @@ public final class FoodStack {
     static void writeSettings(JsonObject root) {
         root.addProperty("foodStackEnabled", foodEnabled);
         root.addProperty("foodStackVertical", foodVerticalLayout);
+        root.addProperty("foodStackSegments", foodSegments);
         root.addProperty("foodStackOffsetX", foodOffsetX);
         root.addProperty("foodStackOffsetY", foodOffsetY);
 
@@ -232,6 +235,18 @@ public final class FoodStack {
         if (root.has("foodStackVertical")) {
             foodVerticalLayout = root.get("foodStackVertical").getAsBoolean();
         }
+        if (root.has("foodStackSegments")) {
+            try {
+                int saved = root.get("foodStackSegments").getAsInt();
+                if (saved == DEFAULT_FOOD_SEGMENTS || saved == MAX_FOOD_SEGMENTS) {
+                    foodSegments = saved;
+                }
+            } catch (RuntimeException ignored) {
+                // Invalid saved values fall back to the current/default mode.
+            }
+        }
+        foodStack = Math.min(foodStack, foodSegments);
+        snapshotFoodStack = Math.min(snapshotFoodStack, foodSegments);
 
         foodOffsetX = root.has("foodStackOffsetX")
                 ? root.get("foodStackOffsetX").getAsInt()
@@ -253,6 +268,18 @@ public final class FoodStack {
 
     private static void saveSettings() {
         EditHud.saveSettings();
+    }
+
+    private static int setFoodSegments(int segments) {
+        if (segments != DEFAULT_FOOD_SEGMENTS && segments != MAX_FOOD_SEGMENTS) {
+            return 0;
+        }
+        foodSegments = segments;
+        foodStack = Math.min(foodStack, foodSegments);
+        snapshotFoodStack = Math.min(snapshotFoodStack, foodSegments);
+        clampFoodOffsetsToScreen();
+        saveSettings();
+        return 1;
     }
 
     private static void registerCommands(
@@ -293,6 +320,11 @@ public final class FoodStack {
                                     saveSettings();
                                     return 1;
                                 }))
+                        .then(ClientCommandManager.literal("stack")
+                                .then(ClientCommandManager.literal("3")
+                                        .executes(context -> setFoodSegments(3)))
+                                .then(ClientCommandManager.literal("4")
+                                        .executes(context -> setFoodSegments(4))))
         );
     }
 
@@ -476,7 +508,7 @@ public final class FoodStack {
         if (type == ConsumptionType.DRINK) {
             drinkStack = nextStack(drinkStack, DRINK_TRIGGER_EVERY, DRINK_SEGMENTS);
         } else {
-            foodStack = Math.min(foodStack + 1, FOOD_SEGMENTS);
+            foodStack = Math.min(foodStack + 1, foodSegments);
         }
     }
 
@@ -534,7 +566,7 @@ public final class FoodStack {
     }
 
     private static void restoreSnapshot() {
-        foodStack = snapshotFoodStack;
+        foodStack = Math.min(snapshotFoodStack, foodSegments);
         drinkStack = snapshotDrinkStack;
         lastSignal = snapshotLastSignal;
         dedupeUntilMs = snapshotDedupeUntilMs;
@@ -565,7 +597,7 @@ public final class FoodStack {
         if (foodEnabled) {
             renderSegments(
                     context,
-                    FOOD_SEGMENTS,
+                    foodSegments,
                     foodStack,
                     foodOffsetX,
                     foodOffsetY,
@@ -713,7 +745,7 @@ public final class FoodStack {
                 foodOffsetX,
                 foodOffsetY,
                 foodVerticalLayout,
-                FOOD_SEGMENTS
+                foodSegments
         );
         foodOffsetX = clamped.x;
         foodOffsetY = clamped.y;
