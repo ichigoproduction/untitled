@@ -43,6 +43,7 @@ public final class SkillHud {
     private static final Pattern SECONDS =
             Pattern.compile("(?<!\\d)(\\d{1,4})\\s*(?:초|s)(?![a-zA-Z])");
     private static final long SECOND = 1_000_000_000L;
+    private static final long SERVER_READY_CORRECTION = SECOND;
     private static final int GAP = 3;
     private static final int MARGIN = 3;
     private static final int DEFAULT_Y = 80;
@@ -216,64 +217,116 @@ public final class SkillHud {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
-        // Some servers decorate or dynamically rename weapons. Matching only
-        // the exact held item name suppresses valid skill actionbars even if
-        // the skill name is clearly present (and /sh test works).
-        String held = client.player.getMainHandStack().getName().getString();
-        Skill match = null;
-        Skill exactMatch = null;
-        Skill containsMatch = null;
-        Skill lastTriggered = null;
-        int exactCount = 0;
-        int containsCount = 0;
-        int triggerCount = 0;
-        int longestTrigger = 0;
-
-        // A long skill name may contain a shorter skill name. Select the most
-        // specific matching trigger before resolving the sword identity.
+        // One packet can contain more than one skill name. Group definitions
+        // by trigger and process each distinct trigger independently.
+        Map<String, List<Skill>> byTrigger = new LinkedHashMap<>();
         for (Skill skill : CATALOG_SKILLS.values()) {
             if (message.contains(skill.trigger())) {
-                longestTrigger = Math.max(longestTrigger, skill.trigger().length());
+                byTrigger.computeIfAbsent(skill.trigger(), ignored -> new ArrayList<>())
+                        .add(skill);
             }
         }
-        if (longestTrigger == 0) return;
+        if (byTrigger.isEmpty()) return;
 
-        for (Skill skill : CATALOG_SKILLS.values()) {
-            if (skill.trigger().length() != longestTrigger
-                    || !message.contains(skill.trigger())) continue;
-            triggerCount++;
-            lastTriggered = skill;
-            if (skill.sword().equals("global") || skill.itemName().equals(held)) {
-                exactCount++;
-                exactMatch = skill;
-            } else if (!held.isEmpty() && held.contains(skill.itemName())) {
-                containsCount++;
-                containsMatch = skill;
-            }
-        }
-
-        if (exactCount == 1) {
-            match = exactMatch;
-        } else if (exactCount == 0 && containsCount == 1) {
-            match = containsMatch;
-        } else if (exactCount == 0 && containsCount == 0 && triggerCount == 1) {
-            // Unique skill name is sufficient even for a decorated weapon.
-            // Never guess if multiple swords share an ambiguous trigger.
-            match = lastTriggered;
-        }
-        if (match == null) return;
-
+        String held = client.player.getMainHandStack().getName().getString();
         long now = System.nanoTime();
-        Matcher matcher = SECONDS.matcher(message);
-        if (matcher.find()) {
-            try {
-                int seconds = Integer.parseInt(matcher.group(1));
-                if (seconds <= 3600) EXPIRY.put(match.key(), now + seconds * SECOND);
-            } catch (NumberFormatException ignored) {}
-        } else if (!message.contains("쿨타임")
-                && EXPIRY.getOrDefault(match.key(), 0L) <= now) {
-            // Repeated success actionbars must not restart an active cooldown.
-            EXPIRY.put(match.key(), now + match.cooldown() * SECOND);
+        int distinctTriggers = 0;
+        for (String trigger : byTrigger.keySet()) {
+            if (hasIndependentOccurrence(message, trigger, byTrigger)) {
+                distinctTriggers++;
+            }
+        }
+
+        for (Map.Entry<String, List<Skill>> entry : byTrigger.entrySet()) {
+            if (!hasIndependentOccurrence(message, entry.getKey(), byTrigger)) continue;
+            Skill match = chooseSkill(entry.getValue(), held);
+            if (match == null) continue;
+
+            // An unlabelled number in a multi-skill packet cannot safely be
+            // attributed to a specific skill. Prefer per-skill catalog times.
+            Integer serverSeconds = null;
+            if (distinctTriggers == 1) {
+                Matcher matcher = SECONDS.matcher(message);
+                if (matcher.find()) {
+                    try {
+                        int parsed = Integer.parseInt(matcher.group(1));
+                        if (parsed <= 3600) serverSeconds = parsed;
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+
+            if (serverSeconds != null) {
+                setExpiry(match, now, serverSeconds);
+            } else if (!message.contains("쿨타임")
+                    && EXPIRY.getOrDefault(match.key(), 0L) <= now) {
+                // Repeated success actionbars must not restart an active timer.
+                setExpiry(match, now, match.cooldown());
+            }
+        }
+    }
+
+    /**
+     * A shorter trigger occurring inside a longer skill name is not an
+     * independent cast. A separate occurrence elsewhere in the same message
+     * is still counted, allowing consecutive or combined skill events.
+     */
+    private static boolean hasIndependentOccurrence(
+            String message, String trigger, Map<String, List<Skill>> triggers
+    ) {
+        for (int index = message.indexOf(trigger); index >= 0;
+                index = message.indexOf(trigger, index + 1)) {
+            boolean covered = false;
+            for (String longer : triggers.keySet()) {
+                if (longer.length() <= trigger.length()) continue;
+                for (int otherIndex = message.indexOf(longer); otherIndex >= 0;
+                        otherIndex = message.indexOf(longer, otherIndex + 1)) {
+                    if (otherIndex <= index
+                            && index + trigger.length() <= otherIndex + longer.length()) {
+                        covered = true;
+                        break;
+                    }
+                }
+                if (covered) break;
+            }
+            if (!covered) return true;
+        }
+        return false;
+    }
+
+    /** Disambiguate shared trigger names using the held item when possible. */
+    private static Skill chooseSkill(List<Skill> candidates, String held) {
+        Skill exact = null;
+        Skill partial = null;
+        int exactCount = 0;
+        int partialCount = 0;
+        for (Skill skill : candidates) {
+            if (skill.sword().equals("global") || skill.itemName().equals(held)) {
+                exact = skill;
+                exactCount++;
+            } else if (!held.isEmpty() && held.contains(skill.itemName())) {
+                partial = skill;
+                partialCount++;
+            }
+        }
+        if (exactCount == 1) return exact;
+        if (exactCount > 1) return null;
+        if (partialCount == 1) return partial;
+        if (partialCount > 1) return null;
+        // A unique trigger is reliable even when server plugins decorate
+        // the item name. Ambiguous names must not start the wrong timer.
+        return candidates.size() == 1 ? candidates.get(0) : null;
+    }
+
+    private static void setExpiry(Skill skill, long now, int seconds) {
+        // On this server the skill becomes usable while the previous local
+        // timer still displays 1s. Account for the observed ~1s offset in
+        // the *deadline*, rather than just hiding the final number.
+        long correctedDuration = Math.max(0L,
+                seconds * SECOND - SERVER_READY_CORRECTION);
+        if (correctedDuration == 0L) {
+            EXPIRY.remove(skill.key());
+        } else {
+            EXPIRY.put(skill.key(), now + correctedDuration);
         }
     }
 
