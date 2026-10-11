@@ -1,5 +1,11 @@
 {
-  "global": {},
+  "global": {
+    "r": {
+      "name": "도약",
+      "trigger": "도약",
+      "cooldown": 8
+    }
+  },
   "swords": [
     {
       "id": "sword1",
