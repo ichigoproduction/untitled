@@ -1,4 +1,75 @@
 {
   "global": {},
-  "swords": []
+  "swords": [
+    {
+      "id": "sword1",
+      "item_name": "별운사인도",
+      "skills": {}
+    },
+    {
+      "id": "sword2",
+      "item_name": "화랑검",
+      "skills": {}
+    },
+    {
+      "id": "sword3",
+      "item_name": "명월검",
+      "skills": {}
+    },
+    {
+      "id": "sword4",
+      "item_name": "진무도",
+      "skills": {}
+    },
+    {
+      "id": "sword5",
+      "item_name": "청람멸도",
+      "skills": {}
+    },
+    {
+      "id": "sword6",
+      "item_name": "타이달리스",
+      "skills": {}
+    },
+    {
+      "id": "sword7",
+      "item_name": "츠바이핸더",
+      "skills": {}
+    },
+    {
+      "id": "sword8",
+      "item_name": "로사스피나",
+      "skills": {}
+    },
+    {
+      "id": "sword9",
+      "item_name": "귀참도",
+      "skills": {}
+    },
+    {
+      "id": "sword10",
+      "item_name": "천광성검",
+      "skills": {}
+    },
+    {
+      "id": "sword11",
+      "item_name": "백도람이",
+      "skills": {}
+    },
+    {
+      "id": "sword12",
+      "item_name": "흑도람이",
+      "skills": {}
+    },
+    {
+      "id": "sword13",
+      "item_name": "마피아 도끼",
+      "skills": {}
+    },
+    {
+      "id": "sword14",
+      "item_name": "마피아 간부 도끼",
+      "skills": {}
+    }
+  ]
 }
