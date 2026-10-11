@@ -13,9 +13,14 @@ import net.minecraft.text.Text;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
@@ -30,11 +35,13 @@ public final class EditHud extends Screen {
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Logger LOG = LoggerFactory.getLogger("untitled/EditHud");
     private static final Path CONFIG_PATH = FabricLoader.getInstance()
             .getConfigDir()
             .resolve("152_hud.json");
 
     private static boolean initialized = false;
+    private static boolean loadingSettings = false;
     private static int openEditorDelayTicks = -1;
     private DragTarget dragTarget = DragTarget.NONE;
 
@@ -233,29 +240,56 @@ public final class EditHud extends Screen {
             return;
         }
 
-        try (Reader reader = Files.newBufferedReader(CONFIG_PATH)) {
+        loadingSettings = true;
+        try (Reader reader = Files.newBufferedReader(CONFIG_PATH, StandardCharsets.UTF_8)) {
             JsonObject root = GSON.fromJson(reader, JsonObject.class);
             if (root == null) {
+                LOG.warn("HUD settings file is empty: {}", CONFIG_PATH);
                 return;
             }
 
-            int partyX = root.has("partyOffsetX")
-                    ? root.get("partyOffsetX").getAsInt()
-                    : 0;
-            int partyY = root.has("partyOffsetY")
-                    ? root.get("partyOffsetY").getAsInt()
-                    : 0;
-
-            PartyHud.setOffsets(partyX, partyY);
-            PartyHud.readSettings(root);
-            FoodStack.readSettings(root);
-            SyringeCooldownHud.readSettings(root);
-            SkillHud.readSettings(root);
-        } catch (Exception ignored) {
+            // Restore skill settings independently. Previously an error while
+            // loading party, food or syringe settings prevented this call
+            // and silently reset skill selections on next save.
+            readSection("skill", () -> SkillHud.readSettings(root));
+            readSection("party position", () -> {
+                int partyX = root.has("partyOffsetX")
+                        ? root.get("partyOffsetX").getAsInt()
+                        : 0;
+                int partyY = root.has("partyOffsetY")
+                        ? root.get("partyOffsetY").getAsInt()
+                        : 0;
+                PartyHud.setOffsets(partyX, partyY);
+            });
+            readSection("party", () -> PartyHud.readSettings(root));
+            readSection("food", () -> FoodStack.readSettings(root));
+            readSection("syringe", () -> SyringeCooldownHud.readSettings(root));
+        } catch (Exception e) {
+            LOG.warn("Failed to read HUD settings from {}", CONFIG_PATH, e);
+        } finally {
+            loadingSettings = false;
         }
     }
 
-    static void saveSettings() {
+    private static void readSection(String section, Runnable apply) {
+        try {
+            apply.run();
+        } catch (RuntimeException error) {
+            LOG.warn("Invalid {} HUD settings in {}; other HUD settings will still load",
+                    section, CONFIG_PATH, error);
+        }
+    }
+
+    /**
+     * Use a complete temporary JSON file plus an atomic replace when the
+     * file system supports it. A crash mid-save must not leave a truncated
+     * config that resets every HUD at the next launch.
+     */
+    static synchronized void saveSettings() {
+        if (loadingSettings) {
+            return;
+        }
+        Path temporary = null;
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
 
@@ -267,14 +301,31 @@ public final class EditHud extends Screen {
             SyringeCooldownHud.writeSettings(root);
             SkillHud.writeSettings(root);
 
+            temporary = Files.createTempFile(
+                    CONFIG_PATH.getParent(), "152_hud-", ".tmp");
             try (Writer writer = Files.newBufferedWriter(
-                    CONFIG_PATH,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING
+                    temporary, StandardCharsets.UTF_8,
+                    StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING
             )) {
                 GSON.toJson(root, writer);
             }
-        } catch (IOException ignored) {
+
+            try {
+                Files.move(temporary, CONFIG_PATH,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, CONFIG_PATH, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to save HUD settings to {}", CONFIG_PATH, e);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException e) {
+                    LOG.warn("Cannot remove temporary HUD settings file {}", temporary, e);
+                }
+            }
         }
     }
 }

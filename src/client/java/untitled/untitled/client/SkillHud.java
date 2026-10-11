@@ -515,21 +515,49 @@ public final class SkillHud {
     }
 
     static void readSettings(JsonObject root) {
-        if (root.has("skillHudEnabled")) enabled = root.get("skillHudEnabled").getAsBoolean();
-        if (root.has("skillHudSize")) {
-            float loaded = root.get("skillHudSize").getAsFloat();
-            if (Float.isFinite(loaded)) scale = Math.max(0.5f, Math.min(5.0f, loaded));
+        // Read each field separately so a malformed size or position never
+        // prevents restoring the list of selected skills.
+        if (root.has("skillHudEnabled")) {
+            try {
+                enabled = root.get("skillHudEnabled").getAsBoolean();
+            } catch (RuntimeException e) {
+                LOG.warn("Invalid saved skillHudEnabled", e);
+            }
         }
-        if (root.has("skillHudOffsetX")) offsetX = root.get("skillHudOffsetX").getAsInt();
-        if (root.has("skillHudOffsetY")) offsetY = root.get("skillHudOffsetY").getAsInt();
+        if (root.has("skillHudSize")) {
+            try {
+                float loaded = root.get("skillHudSize").getAsFloat();
+                if (Float.isFinite(loaded)) scale = Math.max(0.5f, Math.min(5.0f, loaded));
+            } catch (RuntimeException e) {
+                LOG.warn("Invalid saved skillHudSize", e);
+            }
+        }
+        if (root.has("skillHudOffsetX")) {
+            try {
+                offsetX = root.get("skillHudOffsetX").getAsInt();
+            } catch (RuntimeException e) {
+                LOG.warn("Invalid saved skillHudOffsetX", e);
+            }
+        }
+        if (root.has("skillHudOffsetY")) {
+            try {
+                offsetY = root.get("skillHudOffsetY").getAsInt();
+            } catch (RuntimeException e) {
+                LOG.warn("Invalid saved skillHudOffsetY", e);
+            }
+        }
         if (root.has("skillHudVisible") && root.get("skillHudVisible").isJsonObject()) {
-            VISIBLE.clear();
+            Map<String, Boolean> restored = new LinkedHashMap<>();
             for (Map.Entry<String, JsonElement> entry
                     : root.getAsJsonObject("skillHudVisible").entrySet()) {
                 try {
-                    VISIBLE.put(entry.getKey(), entry.getValue().getAsBoolean());
-                } catch (Exception ignored) {}
+                    restored.put(entry.getKey(), entry.getValue().getAsBoolean());
+                } catch (RuntimeException e) {
+                    LOG.warn("Invalid saved visibility for skill {}", entry.getKey(), e);
+                }
             }
+            VISIBLE.clear();
+            VISIBLE.putAll(restored);
         }
     }
 }
