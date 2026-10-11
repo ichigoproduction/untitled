@@ -9,6 +9,7 @@ public class UntitledClient implements ClientModInitializer {
         PartyHud.init();
         FoodStack.init();
         SyringeCooldownHud.init();
+        SkillHud.init();
         ItemModelCache.init();
         ItemModelInspector.init();
         ItemModelOverrides.init();

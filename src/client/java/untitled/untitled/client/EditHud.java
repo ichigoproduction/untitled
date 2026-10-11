@@ -25,7 +25,8 @@ public final class EditHud extends Screen {
         PARTY,
         FOOD,
         DRINK,
-        SYRINGE
+        SYRINGE,
+        SKILL
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -68,6 +69,7 @@ public final class EditHud extends Screen {
                             PartyHud.resetPosition();
                             FoodStack.resetPositions();
                             SyringeCooldownHud.resetPosition();
+                            SkillHud.resetPosition();
                             saveSettings();
                             return 1;
                         }))
@@ -99,11 +101,13 @@ public final class EditHud extends Screen {
         FoodStack.renderFoodEditorPreview(context);
         FoodStack.renderDrinkEditorPreview(context);
         SyringeCooldownHud.renderEditorPreview(context);
+        SkillHud.renderEditorPreview(context);
 
         HudBounds partyBounds = PartyHud.getEditorBounds();
         HudBounds foodBounds = FoodStack.getFoodEditorBounds();
         HudBounds drinkBounds = FoodStack.getDrinkEditorBounds();
         HudBounds syringeBounds = SyringeCooldownHud.getEditorBounds();
+        HudBounds skillBounds = SkillHud.getEditorBounds();
 
         drawSelectionBox(
                 context,
@@ -125,6 +129,11 @@ public final class EditHud extends Screen {
                 syringeBounds,
                 dragTarget == DragTarget.SYRINGE || syringeBounds.contains(mouseX, mouseY)
         );
+        drawSelectionBox(
+                context,
+                skillBounds,
+                dragTarget == DragTarget.SKILL || skillBounds.contains(mouseX, mouseY)
+        );
 
         super.render(context, mouseX, mouseY, delta);
     }
@@ -145,6 +154,10 @@ public final class EditHud extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            if (SkillHud.getEditorBounds().contains(mouseX, mouseY)) {
+                dragTarget = DragTarget.SKILL;
+                return true;
+            }
             // The syringe preview is drawn on top, so it gets first chance at a click.
             if (SyringeCooldownHud.getEditorBounds().contains(mouseX, mouseY)) {
                 dragTarget = DragTarget.SYRINGE;
@@ -186,6 +199,8 @@ public final class EditHud extends Screen {
                 FoodStack.moveDrinkBy(moveX, moveY);
             } else if (dragTarget == DragTarget.SYRINGE) {
                 SyringeCooldownHud.moveBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.SKILL) {
+                SkillHud.moveBy(moveX, moveY);
             }
             return true;
         }
@@ -235,6 +250,7 @@ public final class EditHud extends Screen {
             PartyHud.readSettings(root);
             FoodStack.readSettings(root);
             SyringeCooldownHud.readSettings(root);
+            SkillHud.readSettings(root);
         } catch (Exception ignored) {
         }
     }
@@ -249,6 +265,7 @@ public final class EditHud extends Screen {
             PartyHud.writeSettings(root);
             FoodStack.writeSettings(root);
             SyringeCooldownHud.writeSettings(root);
+            SkillHud.writeSettings(root);
 
             try (Writer writer = Files.newBufferedWriter(
                     CONFIG_PATH,
