@@ -52,6 +52,7 @@ public final class SkillHud {
     private static final Map<String, Long> EXPIRY = new HashMap<>();
 
     private static boolean initialized, debug;
+    private static long lastRenderNano;
     private static boolean enabled = true;
     private static float scale = 1.0f;
     private static int offsetX, offsetY;
@@ -75,6 +76,9 @@ public final class SkillHud {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
             var root = literal("sh")
+                    .then(literal("status").executes(ctx -> status(ctx.getSource())))
+                    .then(literal("on").executes(ctx -> setHudEnabled(true, ctx.getSource())))
+                    .then(literal("off").executes(ctx -> setHudEnabled(false, ctx.getSource())))
                     .then(literal("test")
                             .then(argument("sword", StringArgumentType.word())
                                     .then(argument("slot", StringArgumentType.word())
@@ -126,7 +130,13 @@ public final class SkillHud {
             for (String slot : ALL_SLOTS) {
                 swordArg.then(literal(slot)
                         .then(literal("toggle").executes(ctx ->
-                                toggleSlot(StringArgumentType.getString(ctx, "sword"), slot))));
+                                toggleSlot(StringArgumentType.getString(ctx, "sword"), slot)))
+                        .then(literal("on").executes(ctx ->
+                                setSlotVisible(StringArgumentType.getString(ctx, "sword"),
+                                        slot, true, ctx.getSource())))
+                        .then(literal("off").executes(ctx ->
+                                setSlotVisible(StringArgumentType.getString(ctx, "sword"),
+                                        slot, false, ctx.getSource()))));
             }
             root.then(swordArg);
             dispatcher.register(root);
@@ -152,11 +162,63 @@ public final class SkillHud {
             source.sendError(Text.literal("[SH] 등록된 스킬이 없습니다: " + sword + " " + slot));
             return 0;
         }
-        // A diagnostic timer only; this does not activate a real server skill.
+        // Diagnostic timer. Force the relevant display ON to avoid previous
+        // toggle state masking the result. Does not activate a server skill.
+        enabled = true;
+        VISIBLE.put(id, true);
         EXPIRY.put(id, System.nanoTime() + skill.cooldown() * SECOND);
-        source.sendFeedback(Text.literal("[SH] 테스트 타이머: " + skill.name()
-                + " " + skill.cooldown() + "s"
-                + (isVisible(id) ? "" : " (HUD OFF: /sh " + sword + " " + slot + " toggle)")));
+        EditHud.saveSettings();
+        source.sendFeedback(Text.literal("[SH] 테스트: " + skill.name()
+                + " " + skill.cooldown() + "s | HUD ON"));
+        return 1;
+    }
+
+    private static int setHudEnabled(
+            boolean value,
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
+    ) {
+        enabled = value;
+        EditHud.saveSettings();
+        source.sendFeedback(Text.literal("[SH] Skill HUD: " + (enabled ? "ON" : "OFF")));
+        return 1;
+    }
+
+    private static int setSlotVisible(
+            String sword, String slot, boolean value,
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
+    ) {
+        if (sword.equals("global") && !slot.equals("r")) {
+            source.sendError(Text.literal("[SH] global only supports r"));
+            return 0;
+        }
+        String id = key(sword, slot);
+        VISIBLE.put(id, value);
+        EditHud.saveSettings();
+        source.sendFeedback(Text.literal("[SH] " + sword + " " + slot
+                + " HUD: " + (value ? "ON" : "OFF")));
+        return 1;
+    }
+
+    private static int status(
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
+    ) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        int selected = 0;
+        int running = 0;
+        long now = System.nanoTime();
+        for (Skill skill : CATALOG_SKILLS.values()) {
+            if (isVisible(skill.key())) {
+                selected++;
+                if (EXPIRY.getOrDefault(skill.key(), 0L) > now) running++;
+            }
+        }
+        source.sendFeedback(Text.literal("[SH] HUD: " + (enabled ? "ON" : "OFF")
+                + " | selected: " + selected + " | active: " + running
+                + " | registered: " + CATALOG_SKILLS.size()));
+        source.sendFeedback(Text.literal("[SH] hudHidden(F1): "
+                + client.options.hudHidden + " | size: " + scale
+                + " | offset: " + offsetX + "," + offsetY
+                + " | renderCalled: " + (lastRenderNano > 0)));
         return 1;
     }
 
@@ -320,6 +382,7 @@ public final class SkillHud {
     }
 
     private static void renderHud(DrawContext context) {
+        lastRenderNano = System.nanoTime();
         MinecraftClient client = MinecraftClient.getInstance();
         if (!enabled || client.player == null || client.world == null
                 || client.options.hudHidden || client.currentScreen instanceof EditHud) return;
