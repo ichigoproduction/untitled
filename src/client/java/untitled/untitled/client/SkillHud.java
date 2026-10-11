@@ -29,7 +29,7 @@ import java.util.regex.Pattern;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal;
 
-/** Client-side, data-driven skill cooldown HUD. Server-specific catalog ships empty. */
+/** Client-side, data-driven skill cooldown HUD. */
 public final class SkillHud {
     private record Skill(String sword, String slot, String name, String itemName,
                          String trigger, int cooldown) {
@@ -50,18 +50,11 @@ public final class SkillHud {
     private static final Map<String, Boolean> VISIBLE = new LinkedHashMap<>();
     private static final Map<String, Long> EXPIRY = new HashMap<>();
 
-    private static boolean initialized, debug;
-    private static long lastRenderNano;
+    private static boolean initialized;
     private static boolean enabled = true;
     private static float scale = 1.0f;
     private static int offsetX, offsetY;
     private static ClientPlayNetworkHandler lastConnection;
-    private static String lastDebugText = "";
-    private static String lastHudChannel = "none";
-    private static long lastHudNano = 0L;
-    private static long lastDebugTime;
-    private static String lastMatchDiagnostic = "";
-    private static long lastMatchDiagnosticTime;
     private static EditHud.HudBounds editorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private SkillHud() {}
@@ -76,34 +69,11 @@ public final class SkillHud {
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
             var root = literal("sh")
-                    .then(literal("held").executes(ctx -> {
-                        String itemName = ctx.getSource().getPlayer().getMainHandStack()
-                                .getName().getString();
-                        ctx.getSource().sendFeedback(Text.literal(
-                                "[SH] 현재 손에 든 아이템 이름: " + itemName));
-                        return 1;
-                    }))
-                    .then(literal("status").executes(ctx -> status(ctx.getSource())))
-                    .then(literal("on").executes(ctx -> setHudEnabled(true, ctx.getSource())))
-                    .then(literal("off").executes(ctx -> setHudEnabled(false, ctx.getSource())))
-                    .then(literal("test")
-                            .then(argument("sword", StringArgumentType.word())
-                                    .then(argument("slot", StringArgumentType.word())
-                                            .executes(ctx -> testSkill(
-                                                    StringArgumentType.getString(ctx, "sword"),
-                                                    StringArgumentType.getString(ctx, "slot"),
-                                                    ctx.getSource())))))
-                    .then(literal("debug").executes(ctx -> {
-                        debug = !debug;
-                        lastDebugText = "";
-                        ctx.getSource().sendFeedback(Text.literal(
-                                "[SH] actionbar debug " + (debug ? "ON" : "OFF")
-                                        + " | logs/latest.log"));
-                        return 1;
-                    }))
                     .then(literal("toggle").executes(ctx -> {
                         enabled = !enabled;
                         EditHud.saveSettings();
+                        ctx.getSource().sendFeedback(Text.literal(
+                                "스킬 HUD : " + (enabled ? "ON" : "OFF")));
                         return 1;
                     }))
                     .then(literal("size")
@@ -116,7 +86,7 @@ public final class SkillHud {
                                     })))
                     .then(literal("list").executes(ctx -> {
                         ctx.getSource().sendFeedback(Text.literal(
-                                "[SH] registered skills: " + CATALOG_SKILLS.size()));
+                                "등록된 스킬: " + CATALOG_SKILLS.size()));
                         for (Skill s : CATALOG_SKILLS.values()) {
                             ctx.getSource().sendFeedback(Text.literal(
                                     s.sword() + " " + s.slot() + " " + s.name()
@@ -137,13 +107,7 @@ public final class SkillHud {
             for (String slot : ALL_SLOTS) {
                 swordArg.then(literal(slot)
                         .then(literal("toggle").executes(ctx ->
-                                toggleSlot(StringArgumentType.getString(ctx, "sword"), slot)))
-                        .then(literal("on").executes(ctx ->
-                                setSlotVisible(StringArgumentType.getString(ctx, "sword"),
-                                        slot, true, ctx.getSource())))
-                        .then(literal("off").executes(ctx ->
-                                setSlotVisible(StringArgumentType.getString(ctx, "sword"),
-                                        slot, false, ctx.getSource()))));
+                                toggleSlot(StringArgumentType.getString(ctx, "sword"), slot))));
             }
             root.then(swordArg);
             dispatcher.register(root);
@@ -157,79 +121,6 @@ public final class SkillHud {
 
     private static boolean isVisible(String key) {
         return VISIBLE.getOrDefault(key, false);
-    }
-
-    private static int testSkill(
-            String sword, String slot,
-            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
-    ) {
-        String id = key(sword, slot);
-        Skill skill = CATALOG_SKILLS.get(id);
-        if (skill == null) {
-            source.sendError(Text.literal("[SH] 등록된 스킬이 없습니다: " + sword + " " + slot));
-            return 0;
-        }
-        // Diagnostic timer. Force the relevant display ON to avoid previous
-        // toggle state masking the result. Does not activate a server skill.
-        enabled = true;
-        VISIBLE.put(id, true);
-        EXPIRY.put(id, System.nanoTime() + skill.cooldown() * SECOND);
-        EditHud.saveSettings();
-        source.sendFeedback(Text.literal("[SH] 테스트: " + skill.name()
-                + " " + skill.cooldown() + "s | HUD ON"));
-        return 1;
-    }
-
-    private static int setHudEnabled(
-            boolean value,
-            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
-    ) {
-        enabled = value;
-        EditHud.saveSettings();
-        source.sendFeedback(Text.literal("[SH] Skill HUD: " + (enabled ? "ON" : "OFF")));
-        return 1;
-    }
-
-    private static int setSlotVisible(
-            String sword, String slot, boolean value,
-            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
-    ) {
-        if (sword.equals("global") && !slot.equals("r")) {
-            source.sendError(Text.literal("[SH] global only supports r"));
-            return 0;
-        }
-        String id = key(sword, slot);
-        VISIBLE.put(id, value);
-        EditHud.saveSettings();
-        source.sendFeedback(Text.literal("[SH] " + sword + " " + slot
-                + " HUD: " + (value ? "ON" : "OFF")));
-        return 1;
-    }
-
-    private static int status(
-            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
-    ) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        int selected = 0;
-        int running = 0;
-        long now = System.nanoTime();
-        for (Skill skill : CATALOG_SKILLS.values()) {
-            if (isVisible(skill.key())) {
-                selected++;
-                if (EXPIRY.getOrDefault(skill.key(), 0L) > now) running++;
-            }
-        }
-        source.sendFeedback(Text.literal("[SH] HUD: " + (enabled ? "ON" : "OFF")
-                + " | selected: " + selected + " | active: " + running
-                + " | registered: " + CATALOG_SKILLS.size()));
-        source.sendFeedback(Text.literal("[SH] hudHidden(F1): "
-                + client.options.hudHidden + " | size: " + scale
-                + " | offset: " + offsetX + "," + offsetY
-                + " | renderCalled: " + (lastRenderNano > 0)));
-        source.sendFeedback(Text.literal("[SH] last display channel: " + lastHudChannel
-                + (lastHudNano == 0L ? "" : " ("
-                + Math.max(0L, (System.nanoTime() - lastHudNano) / SECOND) + "s ago)")));
-        return 1;
     }
 
     private static int toggleSlot(String sword, String slot) {
@@ -315,21 +206,12 @@ public final class SkillHud {
         LOG.info("Loaded {} skill definitions", CATALOG_SKILLS.size());
     }
 
-    /** Captures the actual rendered HUD text (including the dedicated actionbar packet). */
-    public static void onHudText(Text text, String channel) {
+    /** Receives the actionbar text through the HUD mixin, including dedicated overlay packets. */
+    public static void onHudText(Text text) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (text == null || client.player == null || client.world == null) return;
         String content = text.getString().replace('\u00A0', ' ').trim();
-        if (content.isEmpty()) return;
-
-        lastHudChannel = channel;
-        lastHudNano = System.nanoTime();
-        if (debug) debugMessage(client, channel, text, content);
-
-        // Title and subtitle messages are diagnostic only until verified.
-        if ("ACTIONBAR".equals(channel)) {
-            onActionbar(content);
-        }
+        if (!content.isEmpty()) onActionbar(content);
     }
 
     private static void onActionbar(String message) {
@@ -372,28 +254,16 @@ public final class SkillHud {
             }
         }
 
-        String matchType = "no match";
         if (exactCount == 1) {
             match = exactMatch;
-            matchType = "exact";
         } else if (exactCount == 0 && containsCount == 1) {
             match = containsMatch;
-            matchType = "display-name contains";
         } else if (exactCount == 0 && containsCount == 0 && triggerCount == 1) {
-            // Only one registered skill in the entire catalog has this trigger;
-            // accepting it is safer than requiring an item display name that
-            // may change with server plugins. Never guess if names collide.
+            // Unique skill name is sufficient even for a decorated weapon.
+            // Never guess if multiple swords share an ambiguous trigger.
             match = lastTriggered;
-            matchType = "unique actionbar trigger";
-        } else {
-            matchType = "ambiguous (" + triggerCount + " skill trigger matches)";
         }
-        if (match == null) {
-            traceMatch(client, "SKIPPED " + matchType + " | held: " + held);
-            return;
-        }
-        traceMatch(client, "MATCH " + match.sword() + " " + match.slot()
-                + " " + match.name() + " via " + matchType + " | held: " + held);
+        if (match == null) return;
 
         long now = System.nanoTime();
         Matcher matcher = SECONDS.matcher(message);
@@ -409,52 +279,11 @@ public final class SkillHud {
         }
     }
 
-    private static void traceMatch(MinecraftClient client, String message) {
-        if (!debug || client.player == null) return;
-        long now = System.nanoTime();
-        if (message.equals(lastMatchDiagnostic)
-                && now - lastMatchDiagnosticTime < 2 * SECOND) return;
-        lastMatchDiagnostic = message;
-        lastMatchDiagnosticTime = now;
-        client.player.sendMessage(Text.literal("[SH] " + message), false);
-        LOG.info("SKILL_HUD {}", message);
-    }
-
-    private static void debugMessage(
-            MinecraftClient client, String channel, Text component, String message
-    ) {
-        long now = System.nanoTime();
-        String signature = channel + ":" + message;
-        if (signature.equals(lastDebugText) && now - lastDebugTime < 2 * SECOND) return;
-        lastDebugText = signature;
-        lastDebugTime = now;
-        String raw = message.length() > 120 ? message.substring(0, 120) + "..." : message;
-        StringBuilder encoded = new StringBuilder();
-        message.codePoints().limit(120).forEach(cp -> {
-            if (cp >= 32 && cp <= 126 && cp != '\\') encoded.appendCodePoint(cp);
-            else encoded.append(String.format("\\u{%X}", cp));
-        });
-        // The Text tree retains literal/translatable content, font IDs, and styles
-        // that may be lost in flattening the visible actionbar to a string.
-        String structured = component.toString();
-        if (structured.length() > 1200) {
-            structured = structured.substring(0, 1200) + "...";
-        }
-        LOG.info("HUD_{} raw={} unicode={} text={}", channel, raw, encoded, structured);
-        client.player.sendMessage(Text.literal("[SH] raw [" + channel + "]: " + raw), false);
-        String dump = encoded.toString();
-        for (int i = 0; i < dump.length(); i += 155) {
-            client.player.sendMessage(Text.literal("[SH] unicode [" + channel + "]: "
-                    + dump.substring(i, Math.min(dump.length(), i + 155))), false);
-        }
-    }
-
     private static void tickConnection(MinecraftClient client) {
         ClientPlayNetworkHandler current = client.getNetworkHandler();
         if (current != lastConnection) {
             if (lastConnection != null) {
                 EXPIRY.clear();
-                lastDebugText = "";
             }
             lastConnection = current;
         }
@@ -477,7 +306,6 @@ public final class SkillHud {
     }
 
     private static void renderHud(DrawContext context) {
-        lastRenderNano = System.nanoTime();
         MinecraftClient client = MinecraftClient.getInstance();
         if (!enabled || client.player == null || client.world == null
                 || client.options.hudHidden || client.currentScreen instanceof EditHud) return;

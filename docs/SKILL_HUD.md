@@ -1,78 +1,50 @@
-# Skill HUD setup
+# 스킬 쿨타임 HUD
 
-This is a first-stage implementation. Fourteen sword IDs have been registered.
-Five skills (sword6 and sword7) use user-supplied names and cooldowns, with
-provisional actionbar triggers based on literal skill names. The debug command
-collects the actual actionbar strings to validate those triggers.
+마인크래프트 Fabric 1.21.4 클라이언트 모드. 서버 액션바에 있는 **스킬명**을 감지하여 등록된 쿨타임을 시작하고, 사용자가 표시하도록 선택한 스킬만 텍스트 HUD에 표시합니다.
 
-## Commands
+## 명령어
 
-- /sh debug : toggle actionbar diagnostics (chat plus logs/latest.log), including MATCH/SKIPPED decisions
-- /sh held : inspect the actual display name of the equipped weapon
-- /sh test sword7 sl : manually start the registered skill's cooldown timer.
-  This does NOT activate the server skill; enable HUD visibility separately if off.
-- /sh sword1 all toggle : enable/disable l, sl, sr, ss for sword1 as a group
-- /sh sword1 sl toggle : toggle just the Shift+left skill
-- /sh sword1 l toggle : toggle just the normal left skill
-- /sh sword1 sr toggle : toggle just the Shift+right skill
-- /sh sword1 ss toggle : toggle just the double-Shift skill
-- /sh sword1 r toggle : toggle global r (the shared leap skill)
-- /sh global r toggle : same shared right-click leap
-- /sh toggle : enable/disable all skill HUD rendering
-- /sh size 1.5 : scale text from 0.5 to 5
-- /sh list : list actual registered skills and visibility
-- /sh reset : clear all selected HUD slots
-- /hud : drag the skill HUD along with existing HUDs
+- `/sh toggle` — 스킬 HUD 전체 표시 켜기/끄기
+- `/sh sword9 sl toggle` — 귀참도 Shift+좌클릭(진혼) 표시 켜기/끄기
+- `/sh sword9 sr toggle` — 귀참도 Shift+우클릭(흑익비산) 표시 켜기/끄기
+- `/sh sword9 ss toggle` — 귀참도 Shift 두 번(황천쇄도) 표시 켜기/끄기
+- `/sh sword9 all toggle` — 귀참도 전용 4개 슬롯(`l`, `sl`, `sr`, `ss`)을 한꺼번에 켜기/끄기. 공유 도약 `r`은 제외
+- `/sh global r toggle` — 모든 검에서 공통으로 사용하는 도약 표시 켜기/끄기
+- `/sh sword9 r toggle` — 위 공통 도약과 동일
+- `/sh list` — 스킬 목록과 현재 선택 상태 확인
+- `/sh size 1.5` — 텍스트 배율 설정 (0.5~5)
+- `/sh reset` — 개별 스킬 표시 선택 초기화
+- `/hud` — HUD 위치 편집 (`/hud reset`은 위치 초기화)
 
-All commands except debug/list are silent on success. They work even if a sword
-has no skill catalog entry yet; selection preferences survive future updates.
+검 번호는 `sword1`~`sword14`입니다. 개별 스킬 슬롯은 `l`, `sl`, `sr`, `ss`, `r`로 구성됩니다.
+명령어는 `toggle` 방식이며 진단·강제 테스트·직접 `on/off` 명령어는 더 이상 제공하지 않습니다.
 
-## Development catalog
+## 등록 데이터
 
-File: src/main/resources/assets/untitled/skill_catalog.json
-This is bundled into the mod JAR. Currently defined:
-- sword6 (타이달리스): sl 창람 8s, sr 파참 12s
-- sword7 (츠바이핸더): sl 섬멸 9s, sr 철벽돌파 10s, ss 폭풍참격 11s
-The triggers currently equal the literal skill names. If the server sends
-resource-pack-specific glyphs instead, automatic detection will NOT work until
-/sh debug reveals suitable raw text to use as triggers.
-User visibility and HUD position are saved independently in config/152_hud.json.
+`src/main/resources/assets/untitled/skill_catalog.json`에 개발자가 지정한 이름, 감지 문자열 및 쿨타임이 들어갑니다.
 
-Example only, NOT verified server data:
+| 검 | 슬롯 | 스킬 | 쿨타임 |
+|---|---|---|---|
+| 전체 공통 | r | 도약 | 8초 |
+| sword6 · 타이달리스 | sl | 창람 | 8초 |
+| sword6 · 타이달리스 | sr | 파참 | 12초 |
+| sword7 · 츠바이핸더 | sl | 섬멸 | 9초 |
+| sword7 · 츠바이핸더 | sr | 철벽돌파 | 10초 |
+| sword7 · 츠바이핸더 | ss | 폭풍참격 | 11초 |
+| sword9 · 귀참도 | sl | 진혼 | 7초 |
+| sword9 · 귀참도 | sr | 흑익비산 | 11초 |
+| sword9 · 귀참도 | ss | 황천쇄도 | 9초 |
 
-{
-  "global": {
-    "r": { "name": "도약", "trigger": "actual actionbar text", "cooldown": 15 }
-  },
-  "swords": [{
-    "id": "sword1",
-    "item_name": "actual displayed sword name",
-    "skills": {
-      "sl": { "name": "폭풍참격", "trigger": "actual trigger", "cooldown": 20 }
-    }
-  }]
-}
+아직 등록하지 않은 검의 스킬은 감지되지 않습니다. 각 트리거는 서버 액션바에 해당 스킬명이 실제로 포함될 때 작동합니다.
 
-Skill slots: l, sl, sr, ss. The r slot is always global.
-Ambiguous actionbar skill names are never guessed: exact held name wins,
-then contained held name, then a unique matching actionbar trigger. A
-longer matching trigger takes priority over shorter contained names.
-The trigger is an exact actionbar substring. Weapon item_name is used for
-disambiguation, but if there is exactly one registered skill with that trigger
-the HUD also works when the server changes/decorates its item display name. Duplicate success messages do not restart an
-already active timer. A message containing the trigger plus e.g. 5초 or 5s
-corrects remaining time. Numeric-only messages cannot be assigned to a skill
-without additional context; do not infer which cooldown they belong to.
+## 동작
 
-## Next verification steps
+- 액션바에 스킬 이름이 들어오면 기본 쿨타임 카운트다운을 시작합니다.
+- 같은 성공 메시지가 반복 도착해도 동작 중인 타이머를 다시 시작하지 않습니다.
+- 동일 액션바에 해당 스킬 이름과 `5초` 혹은 `5s` 같은 남은 시간이 함께 포함되면 그 값으로 보정합니다.
+- 검의 표시 이름이 접두어 등으로 변형되어도 액션바 이름이 등록된 스킬 중 유일하면 자동 감지합니다. 여러 검에 중복된 이름이 있고 구분되지 않으면 잘못된 스킬을 추측하지 않습니다.
+- 검을 변경해도 시작된 검별 스킬 타이머는 유지되며, 도약은 모든 검에서 한 개의 타이머를 공유합니다.
+- HUD에는 **활성화한 스킬 중 남은 시간이 있는 항목만** 표시됩니다. 위치·배율·스킬 선택 설정은 `config/152_hud.json`에 저장됩니다.
+- 서버 재접속 시 진행 중인 로컬 타이머는 초기화됩니다.
 
-1. Run /sh debug, use one skill successfully, copy actionbar raw/unicode.
-2. Retry that skill during cooldown; copy the remaining-time actionbar.
-3. Repeat with the other skills. Include exact weapon display name and
-   duration per skill. Private-use Unicode glyphs are printed as \u{XXXX}.
-4. Populate catalog, rebuild, and enable selected slots.
-
-Timers do not run for unknown/unregistered skills, and no unknown durations
-have been invented. The /sh test command starts a timer for a registered skill
-only. Timer state resets on disconnect, and selection
-preferences remain saved. Debug can be noisy; turn it off after sampling.
+실제 게임에서의 컴파일/실행 검증은 별도로 필요합니다.

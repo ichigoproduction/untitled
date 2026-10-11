@@ -77,7 +77,23 @@
     {
       "id": "sword9",
       "item_name": "귀참도",
-      "skills": {}
+      "skills": {
+        "sl": {
+          "name": "진혼",
+          "trigger": "진혼",
+          "cooldown": 7
+        },
+        "sr": {
+          "name": "흑익비산",
+          "trigger": "흑익비산",
+          "cooldown": 11
+        },
+        "ss": {
+          "name": "황천쇄도",
+          "trigger": "황천쇄도",
+          "cooldown": 9
+        }
+      }
     },
     {
       "id": "sword10",
