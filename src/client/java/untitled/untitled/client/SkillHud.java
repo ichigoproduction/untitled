@@ -72,8 +72,6 @@ public final class SkillHud {
                     .then(literal("toggle").executes(ctx -> {
                         enabled = !enabled;
                         EditHud.saveSettings();
-                        ctx.getSource().sendFeedback(Text.literal(
-                                "스킬 HUD : " + (enabled ? "ON" : "OFF")));
                         return 1;
                     }))
                     .then(literal("size")
