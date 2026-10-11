@@ -258,6 +258,8 @@ public final class SkillHud {
 
         // One packet can contain more than one skill name. Group definitions
         // by trigger and process each distinct trigger independently.
+        // Treat spacing between Hangul syllables as decorative for matching.
+        String skillText = message.replaceAll("\\s+", "");
         Map<String, List<Skill>> byTrigger = new LinkedHashMap<>();
         for (Skill skill : CATALOG_SKILLS.values()) {
             if (skillText.contains(skill.trigger())) {
@@ -269,9 +271,6 @@ public final class SkillHud {
 
         String held = client.player.getMainHandStack().getName().getString();
         long now = System.nanoTime();
-        // Treat separators injected between Hangul syllables as decorative
-        // while retaining the original text for remaining-time parsing.
-        String skillText = message.replaceAll("\\s+", "");
         int distinctTriggers = 0;
         for (String trigger : byTrigger.keySet()) {
             if (hasIndependentOccurrence(skillText, trigger, byTrigger)) {
