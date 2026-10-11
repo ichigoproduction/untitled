@@ -7,7 +7,6 @@ import com.mojang.brigadier.arguments.FloatArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -58,6 +57,8 @@ public final class SkillHud {
     private static int offsetX, offsetY;
     private static ClientPlayNetworkHandler lastConnection;
     private static String lastDebugText = "";
+    private static String lastHudChannel = "none";
+    private static long lastHudNano = 0L;
     private static long lastDebugTime;
     private static EditHud.HudBounds editorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
@@ -68,9 +69,6 @@ public final class SkillHud {
         initialized = true;
         loadCatalog();
 
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            if (overlay) onActionbar(message.getString());
-        });
         HudRenderCallback.EVENT.register((context, ticks) -> renderHud(context));
         ClientTickEvents.END_CLIENT_TICK.register(SkillHud::tickConnection);
 
@@ -219,6 +217,9 @@ public final class SkillHud {
                 + client.options.hudHidden + " | size: " + scale
                 + " | offset: " + offsetX + "," + offsetY
                 + " | renderCalled: " + (lastRenderNano > 0)));
+        source.sendFeedback(Text.literal("[SH] last display channel: " + lastHudChannel
+                + (lastHudNano == 0L ? "" : " ("
+                + Math.max(0L, (System.nanoTime() - lastHudNano) / SECOND) + "s ago)")));
         return 1;
     }
 
@@ -305,12 +306,26 @@ public final class SkillHud {
         LOG.info("Loaded {} skill definitions", CATALOG_SKILLS.size());
     }
 
-    private static void onActionbar(String actionbar) {
+    /** Captures the actual rendered HUD text (including the dedicated actionbar packet). */
+    public static void onHudText(Text text, String channel) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (text == null || client.player == null || client.world == null) return;
+        String content = text.getString().replace('\u00A0', ' ').trim();
+        if (content.isEmpty()) return;
+
+        lastHudChannel = channel;
+        lastHudNano = System.nanoTime();
+        if (debug) debugMessage(client, channel, text, content);
+
+        // Title and subtitle messages are diagnostic only until verified.
+        if ("ACTIONBAR".equals(channel)) {
+            onActionbar(content);
+        }
+    }
+
+    private static void onActionbar(String message) {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
-        String message = actionbar.replace('\u00A0', ' ').trim();
-        if (message.isEmpty()) return;
-        if (debug) debugMessage(client, message);
 
         String held = client.player.getMainHandStack().getName().getString();
         Skill match = null;
@@ -334,10 +349,13 @@ public final class SkillHud {
         }
     }
 
-    private static void debugMessage(MinecraftClient client, String message) {
+    private static void debugMessage(
+            MinecraftClient client, String channel, Text component, String message
+    ) {
         long now = System.nanoTime();
-        if (message.equals(lastDebugText) && now - lastDebugTime < 2 * SECOND) return;
-        lastDebugText = message;
+        String signature = channel + ":" + message;
+        if (signature.equals(lastDebugText) && now - lastDebugTime < 2 * SECOND) return;
+        lastDebugText = signature;
         lastDebugTime = now;
         String raw = message.length() > 120 ? message.substring(0, 120) + "..." : message;
         StringBuilder encoded = new StringBuilder();
@@ -345,12 +363,18 @@ public final class SkillHud {
             if (cp >= 32 && cp <= 126 && cp != '\\') encoded.appendCodePoint(cp);
             else encoded.append(String.format("\\u{%X}", cp));
         });
-        LOG.info("ACTIONBAR raw={} unicode={}", raw, encoded);
-        client.player.sendMessage(Text.literal("[SH] raw: " + raw), false);
+        // The Text tree retains literal/translatable content, font IDs, and styles
+        // that may be lost in flattening the visible actionbar to a string.
+        String structured = component.toString();
+        if (structured.length() > 1200) {
+            structured = structured.substring(0, 1200) + "...";
+        }
+        LOG.info("HUD_{} raw={} unicode={} text={}", channel, raw, encoded, structured);
+        client.player.sendMessage(Text.literal("[SH] raw [" + channel + "]: " + raw), false);
         String dump = encoded.toString();
-        for (int i = 0; i < dump.length(); i += 160) {
-            client.player.sendMessage(Text.literal("[SH] unicode: "
-                    + dump.substring(i, Math.min(dump.length(), i + 160))), false);
+        for (int i = 0; i < dump.length(); i += 155) {
+            client.player.sendMessage(Text.literal("[SH] unicode [" + channel + "]: "
+                    + dump.substring(i, Math.min(dump.length(), i + 155))), false);
         }
     }
 
