@@ -537,12 +537,9 @@ public final class FoodStack {
     }
 
     private static void handleConsumptionMessage(String clean) {
-        // Only accept a complete consumption message. Do not combine
-        // messages received at different times.
-        if (!clean.contains("먹은 음식:")) {
-            return;
-        }
-
+        // The server may send "먹은 음식:" and the hunger/thirst result as
+        // separate messages. Count the explicit hunger/thirst event itself;
+        // no pending messages, pairing timer, or timing-based suppression.
         ConsumptionType type = classifyConsumption(clean);
         if (type != null) {
             applyConsumption(type);
