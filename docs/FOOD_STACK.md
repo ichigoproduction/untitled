@@ -55,3 +55,10 @@
 - `/hud` 미리보기·이동 범위도 바뀐 칸 모양의 실제 크기를 반영합니다. 색상 및 모양 명령어는 채팅 출력 없이 적용됩니다.
 
 예: `/fs color lavender`, `/fs shape round`, `/ds color white`, `/ds shape circle`. 보석형은 없습니다.
+
+## 모양 선택: classic / pixel
+
+- `/fs shape classic` 또는 `/ds shape classic`: 예전 원본 10×4px 막대. 외부 1px 테두리와 상단 1px 하이라이트를 원본과 동일하게 표시합니다.
+- `/fs shape pixel` 또는 `/ds shape pixel`: 직전 업데이트의 10×4px 내부 테두리·작은 내부 채움 디자인입니다.
+- 모양은 위 두 가지뿐이며 `round`, `circle`은 삭제했습니다. 기본값은 `classic`입니다. 기존 설정에 `pixel`이 저장되었다면 계속 해당 모양이 표시되므로, 원본으로 돌리려면 `shape classic`을 실행하세요.
+- 음식과 음료의 색상 설정 14종 및 HUD 로직은 유지됩니다.

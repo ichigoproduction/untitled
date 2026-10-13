@@ -25,9 +25,7 @@ public final class FoodStack {
     private static final int DRINK_TRIGGER_EVERY = 2;
 
     private static final int SEGMENT_WIDTH = 10;
-    private static final int PIXEL_HEIGHT = 4;
-    private static final int ROUND_HEIGHT = 6;
-    private static final int CIRCLE_HEIGHT = 10;
+    private static final int SEGMENT_HEIGHT = 4;
     private static final int SEGMENT_GAP = 4;
     private static final int DEFAULT_Y_FROM_CROSSHAIR = 18;
     private static final int DEFAULT_DRINK_OFFSET_Y = 10;
@@ -35,10 +33,12 @@ public final class FoodStack {
 
     private static final int EMPTY_BACKGROUND = 0x44000000;
     private static final int EMPTY_EDGE = 0x66000000;
-    private static final int FILLED_HIGHLIGHT = 0x55FFFFFF;
-    private static final int FILLED_EDGE = 0xAA455061;
-    private static final int BLACK_EDGE = 0xCCFFFFFF;
-    private static final int EMPTY_SHAPE_EDGE = 0x8867778B;
+    private static final int CLASSIC_HIGHLIGHT = 0x99FFFFFF;
+    private static final int PIXEL_HIGHLIGHT = 0x55FFFFFF;
+    private static final int CLASSIC_EDGE = 0x66000000;
+    private static final int PIXEL_EDGE = 0xAA455061;
+    private static final int PIXEL_BLACK_EDGE = 0xCCFFFFFF;
+    private static final int PIXEL_EMPTY_EDGE = 0x8867778B;
 
     private enum HudColor {
         PINK(0xFFFFB6D9), BLUE(0xFFADD8FF), GREEN(0xFFB8E9BD),
@@ -52,16 +52,9 @@ public final class FoodStack {
         int argb() { return argb; }
     }
 
+    // Original outer-outline HUD and recent inner-outline pixel variant.
     private enum HudShape {
-        PIXEL, ROUND, CIRCLE
-    }
-
-    private static int segmentHeight(HudShape shape) {
-        return switch (shape) {
-            case PIXEL -> PIXEL_HEIGHT;
-            case ROUND -> ROUND_HEIGHT;
-            case CIRCLE -> CIRCLE_HEIGHT;
-        };
+        CLASSIC, PIXEL
     }
 
     private static final long LOBBY_RESET_DELAY_MS = 180L;
@@ -85,8 +78,8 @@ public final class FoodStack {
     private static int foodSegments = DEFAULT_FOOD_SEGMENTS;
     private static HudColor foodColor = HudColor.PINK;
     private static HudColor drinkColor = HudColor.BLUE;
-    private static HudShape foodShape = HudShape.PIXEL;
-    private static HudShape drinkShape = HudShape.PIXEL;
+    private static HudShape foodShape = HudShape.CLASSIC;
+    private static HudShape drinkShape = HudShape.CLASSIC;
 
     private static int foodOffsetX = 0;
     private static int foodOffsetY = 0;
@@ -677,69 +670,36 @@ public final class FoodStack {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return new EditHud.HudBounds(0, 0, 1, 1);
 
-        int width = SEGMENT_WIDTH;
-        int height = segmentHeight(shape);
-        LayoutBox box = computeLayout(
-                client, horizontalOffset, verticalOffset, vertical, segmentCount, shape);
+        LayoutBox box = computeLayout(client, horizontalOffset, verticalOffset,
+                vertical, segmentCount, shape);
         box = clampLayoutToScreen(client, box);
 
         for (int index = 0; index < segmentCount; index++) {
-            int x = vertical ? box.startX : box.startX + index * (width + SEGMENT_GAP);
+            int x = vertical ? box.startX
+                    : box.startX + index * (SEGMENT_WIDTH + SEGMENT_GAP);
             int y = vertical
-                    ? box.startY + (segmentCount - 1 - index) * (height + SEGMENT_GAP)
+                    ? box.startY + (segmentCount - 1 - index) * (SEGMENT_HEIGHT + SEGMENT_GAP)
                     : box.startY;
-            drawSegment(context, x, y, width, height, shape, color,
-                    index < filledSegments);
-        }
-        return new EditHud.HudBounds(
-                box.startX, box.startY, box.totalWidth, box.totalHeight);
-    }
+            int x2 = x + SEGMENT_WIDTH;
+            int y2 = y + SEGMENT_HEIGHT;
+            boolean filled = index < filledSegments;
 
-    private static void drawSegment(
-            DrawContext context, int x, int y, int width, int height,
-            HudShape shape, HudColor color, boolean filled
-    ) {
-        int outline = !filled ? EMPTY_SHAPE_EDGE
-                : (color == HudColor.BLACK ? BLACK_EDGE : FILLED_EDGE);
-        drawSolidShape(context, x, y, width, height, shape, outline);
-        drawSolidShape(context, x + 1, y + 1, width - 2, height - 2, shape,
-                filled ? color.argb() : EMPTY_BACKGROUND);
-        if (filled) {
-            if (shape == HudShape.CIRCLE) {
-                context.fill(x + 3, y + 2, x + 5, y + 3, FILLED_HIGHLIGHT);
+            if (shape == HudShape.CLASSIC) {
+                // Original rendering order, 1px external outline and top stripe.
+                context.fill(x - 1, y - 1, x2 + 1, y2 + 1, CLASSIC_EDGE);
+                context.fill(x, y, x2, y2, filled ? color.argb() : EMPTY_BACKGROUND);
+                if (filled) context.fill(x, y, x2, y + 1, CLASSIC_HIGHLIGHT);
             } else {
-                context.fill(x + 2, y + 1, x + width - 2, y + 2, FILLED_HIGHLIGHT);
+                // Recent 'pixel' appearance: internal outline and thin inner fill.
+                int edge = !filled ? PIXEL_EMPTY_EDGE
+                        : (color == HudColor.BLACK ? PIXEL_BLACK_EDGE : PIXEL_EDGE);
+                context.fill(x, y, x2, y2, edge);
+                context.fill(x + 1, y + 1, x2 - 1, y2 - 1,
+                        filled ? color.argb() : EMPTY_BACKGROUND);
+                if (filled) context.fill(x + 2, y + 1, x2 - 2, y + 2, PIXEL_HIGHLIGHT);
             }
         }
-    }
-
-    private static void drawSolidShape(
-            DrawContext context, int x, int y, int width, int height,
-            HudShape shape, int color
-    ) {
-        if (width <= 0 || height <= 0) return;
-        if (shape == HudShape.PIXEL) {
-            context.fill(x, y, x + width, y + height, color);
-            return;
-        }
-        for (int row = 0; row < height; row++) {
-            int inset;
-            if (shape == HudShape.ROUND) {
-                // Rounded corners while maintaining a horizontal bar.
-                int distance = Math.min(row, height - 1 - row);
-                inset = distance == 0 ? (height >= 6 ? 2 : 1)
-                        : (distance == 1 && height >= 6 ? 1 : 0);
-            } else {
-                // Filled pixel circle (equal width and height).
-                double normalizedY = (row + 0.5 - height / 2.0) / (height / 2.0);
-                double radiusX = Math.sqrt(Math.max(0.0, 1.0 - normalizedY * normalizedY))
-                        * (width / 2.0);
-                inset = (int) Math.ceil(width / 2.0 - radiusX);
-            }
-            int left = x + Math.min(inset, width / 2);
-            int right = x + width - Math.min(inset, width / 2);
-            if (left < right) context.fill(left, y + row, right, y + row + 1, color);
-        }
+        return new EditHud.HudBounds(box.startX, box.startY, box.totalWidth, box.totalHeight);
     }
 
     private static LayoutBox computeLayout(
@@ -750,7 +710,6 @@ public final class FoodStack {
             int segmentCount,
             HudShape shape
     ) {
-        int segmentHeight = segmentHeight(shape);
         int screenWidth = client.getWindow().getScaledWidth();
         int screenHeight = client.getWindow().getScaledHeight();
 
@@ -758,7 +717,7 @@ public final class FoodStack {
         int centerY = screenHeight / 2 + verticalOffset + DEFAULT_Y_FROM_CROSSHAIR;
 
         if (vertical) {
-            int totalHeight = segmentCount * segmentHeight
+            int totalHeight = segmentCount * SEGMENT_HEIGHT
                     + (segmentCount - 1) * SEGMENT_GAP;
             return new LayoutBox(
                     centerX - SEGMENT_WIDTH / 2,
@@ -774,7 +733,7 @@ public final class FoodStack {
                 centerX - totalWidth / 2,
                 centerY,
                 totalWidth,
-                segmentHeight
+                SEGMENT_HEIGHT
         );
     }
 
