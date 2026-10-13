@@ -38,3 +38,18 @@
 - 1초 내에 `먹은 음식:`과 `허기:`/`갈증:`을 서로 다른 메시지에서 결합하던 처리, 보관 상태, 매 틱 만료 검사를 제거했습니다.
 - 이제 **동일한 서버 메시지에 `먹은 음식:`과 `허기:` 또는 `갈증:` 중 정확히 하나가 함께 들어와야만** 음식/음료 섭취를 1회 처리합니다.
 - 분리된 메시지는 섭취로 계산하지 않습니다. 버프 알림이 도착하면 기존대로 음식 스택을 즉시 초기화합니다.
+
+## 음식·음료 HUD 색상 및 모양 설정
+
+음식과 음료 HUD의 색상·모양은 서로 독립적으로 변경할 수 있습니다.
+
+- `/fs color pink`, `/ds color mint`처럼 각각 색상 지정
+- 지원하는 색상(유채색은 모두 파스텔 톤): `pink`, `blue`, `green`, `yellow`, `purple`, `orange`, `red`, `mint`, `peach`, `cyan`, `lavender`
+- 중성색: `white`, `black`, `gray`
+- `/fs shape pixel|round|circle`, `/ds shape pixel|round|circle`
+- 모양의 크기: `pixel`은 기존 10×4px 각진 칸, `round`는 10×6px 둥근 모서리 막대, `circle`은 10×10px 원형
+- 기본 설정: 음식 `pink pixel`, 음료 `blue pixel`. 스택이 채워지지 않은 칸도 같은 모양의 반투명 외곽선으로 표시됩니다.
+- 변경한 색상 및 모양은 `config/152_hud.json`에 `foodStackColor`, `foodStackShape`, `drinkStackColor`, `drinkStackShape`로 각각 저장되고 재시작 시 복원됩니다.
+- `/hud` 미리보기·이동 범위도 바뀐 칸 모양의 실제 크기를 반영합니다. 색상 및 모양 명령어는 채팅 출력 없이 적용됩니다.
+
+예: `/fs color lavender`, `/fs shape round`, `/ds color white`, `/ds shape circle`. 보석형은 없습니다.
