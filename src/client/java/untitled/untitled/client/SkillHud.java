@@ -50,7 +50,6 @@ public final class SkillHud {
     private static final long ZERO_DISPLAY_DURATION = SECOND;
     // Observed 0.65s correction was ~0.25s late; 0.90s is a trial value.
     private static final long SERVER_READY_CORRECTION = 900_000_000L;
-    private static final long RECAST_GRACE = 750_000_000L;
     private static final int GAP = 3;
     private static final int MARGIN = 3;
     private static final int DEFAULT_Y = 80;
@@ -247,6 +246,10 @@ public final class SkillHud {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.world == null) return;
 
+        // Rejection messages never start or correct skill cooldowns,
+        // even when they contain a skill name and a numeric duration.
+        if (isCooldownRejection(message)) return;
+
         // One packet can contain more than one skill name. Group definitions
         // by trigger and process each distinct trigger independently.
         // Treat spacing between Hangul syllables as decorative for matching.
@@ -282,12 +285,9 @@ public final class SkillHud {
             if (serverSeconds != null) {
                 // A skill-specific countdown from the server has priority.
                 setExpiry(match, now, serverSeconds);
-            } else if (!isCooldownRejection(message)
-                    && EXPIRY.getOrDefault(match.key(), 0L) <= now + RECAST_GRACE) {
-                // A genuine recast can arrive just before our local clock
-                // expires; the server may already have accepted it. Re-arm
-                // near expiry, but ignore repeated success packets during
-                // the main cooldown window.
+            } else if (EXPIRY.getOrDefault(match.key(), 0L) <= now) {
+                // A new unnamed-duration success can restart the timer
+                // only after its local cooldown has fully expired.
                 setExpiry(match, now, match.cooldown());
             }
         }

@@ -36,7 +36,6 @@ public final class FoodStack {
     private static final int DRINK_FILLED_BACKGROUND = 0xFF69C9FF;
     private static final int FILLED_HIGHLIGHT = 0x99FFFFFF;
 
-    private static final long CONSUMPTION_CLASSIFY_WINDOW_MS = 1_000L;
     private static final long LOBBY_RESET_DELAY_MS = 180L;
     private static final long LOBBY_RETRY_WINDOW_MS = 5_000L;
     private static final long LOBBY_UNDO_WINDOW_MS = 5_000L;
@@ -65,8 +64,6 @@ public final class FoodStack {
     private static int foodStack = 0;
     private static int drinkStack = 0;
 
-    private static String pendingConsumptionSignal = "";
-    private static long pendingConsumptionUntilMs = 0L;
     private static RegistryKey<World> lastWorldKey = null;
     private static long consumptionSerial = 0L;
 
@@ -111,7 +108,6 @@ public final class FoodStack {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             tickWorldChangeReset(client);
             processLobbyResetTimers();
-            processPendingConsumptionTimer();
         });
     }
 
@@ -400,13 +396,6 @@ public final class FoodStack {
         }
     }
 
-    private static void processPendingConsumptionTimer() {
-        if (!pendingConsumptionSignal.isEmpty()
-                && System.currentTimeMillis() > pendingConsumptionUntilMs) {
-            clearPendingConsumption();
-        }
-    }
-
     private static void onIncomingMessage(String raw) {
         String clean = normalize(raw);
         handleRetryMessage(clean);
@@ -414,9 +403,6 @@ public final class FoodStack {
             // Apply every actual server buff notification without an
             // artificial time-based ignore window.
             resetFoodStack();
-            // Discard an incomplete consumption sequence that predates
-            // this buff, but allow the next meal immediately.
-            clearPendingConsumption();
             return;
         }
         handleConsumptionMessage(clean);
@@ -445,25 +431,14 @@ public final class FoodStack {
     }
 
     private static void handleConsumptionMessage(String clean) {
-        long now = System.currentTimeMillis();
-        ConsumptionType type = classifyConsumption(clean);
-        boolean hasConsumedFoodHeader = clean.contains("먹은 음식:");
-
-        if (hasConsumedFoodHeader) {
-            if (type != null) {
-                clearPendingConsumption();
-                applyConsumption(type);
-            } else {
-                pendingConsumptionSignal = clean;
-                pendingConsumptionUntilMs = now + CONSUMPTION_CLASSIFY_WINDOW_MS;
-            }
+        // Only accept a complete consumption message. Do not combine
+        // messages received at different times.
+        if (!clean.contains("먹은 음식:")) {
             return;
         }
 
-        if (type != null
-                && !pendingConsumptionSignal.isEmpty()
-                && now <= pendingConsumptionUntilMs) {
-            clearPendingConsumption();
+        ConsumptionType type = classifyConsumption(clean);
+        if (type != null) {
             applyConsumption(type);
         }
     }
@@ -497,18 +472,12 @@ public final class FoodStack {
                 : Math.min(next, visibleSegments);
     }
 
-    private static void clearPendingConsumption() {
-        pendingConsumptionSignal = "";
-        pendingConsumptionUntilMs = 0L;
-    }
-
     private static void tickWorldChangeReset(MinecraftClient client) {
         if (client == null || client.world == null || client.player == null) {
             lastWorldKey = null;
             lobbyResetPending = false;
             lobbyUndoArmed = false;
             lastLobbyCommandMs = 0L;
-            clearPendingConsumption();
             return;
         }
 
@@ -537,13 +506,11 @@ public final class FoodStack {
     private static void resetAllStacks() {
         foodStack = 0;
         drinkStack = 0;
-        clearPendingConsumption();
     }
 
     private static void restoreSnapshot() {
         foodStack = Math.min(snapshotFoodStack, foodSegments);
         drinkStack = snapshotDrinkStack;
-        clearPendingConsumption();
     }
 
     private static String normalize(String value) {
