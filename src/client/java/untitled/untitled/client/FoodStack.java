@@ -36,7 +36,7 @@ public final class FoodStack {
     private static final int DRINK_FILLED_BACKGROUND = 0xFF69C9FF;
     private static final int FILLED_HIGHLIGHT = 0x99FFFFFF;
 
-    private static final long DEDUPE_WINDOW_MS = 180L;
+    private static final long BUFF_RESET_DEDUPE_WINDOW_MS = 180L;
     private static final long CONSUMPTION_CLASSIFY_WINDOW_MS = 1_000L;
     private static final long LOBBY_RESET_DELAY_MS = 180L;
     private static final long LOBBY_RETRY_WINDOW_MS = 5_000L;
@@ -66,8 +66,6 @@ public final class FoodStack {
     private static int foodStack = 0;
     private static int drinkStack = 0;
 
-    private static String lastSignal = "";
-    private static long dedupeUntilMs = 0L;
     // A buff message can arrive through multiple message callbacks.
     private static long lastBuffResetMs = 0L;
     private static String pendingConsumptionSignal = "";
@@ -83,8 +81,6 @@ public final class FoodStack {
 
     private static int snapshotFoodStack = 0;
     private static int snapshotDrinkStack = 0;
-    private static String snapshotLastSignal = "";
-    private static long snapshotDedupeUntilMs = 0L;
     private static long snapshotConsumptionSerial = 0L;
 
     private static EditHud.HudBounds lastFoodEditorBounds =
@@ -375,8 +371,6 @@ public final class FoodStack {
 
         snapshotFoodStack = foodStack;
         snapshotDrinkStack = drinkStack;
-        snapshotLastSignal = lastSignal;
-        snapshotDedupeUntilMs = dedupeUntilMs;
         snapshotConsumptionSerial = consumptionSerial;
 
         lastLobbyCommandMs = now;
@@ -423,7 +417,7 @@ public final class FoodStack {
             long now = System.currentTimeMillis();
             // If chat and game callbacks deliver the same buff event twice,
             // the duplicate must not erase a genuine new stack in between.
-            if (lastBuffResetMs != 0L && now - lastBuffResetMs < DEDUPE_WINDOW_MS) {
+            if (lastBuffResetMs != 0L && now - lastBuffResetMs < BUFF_RESET_DEDUPE_WINDOW_MS) {
                 return;
             }
             lastBuffResetMs = now;
@@ -467,7 +461,7 @@ public final class FoodStack {
         if (hasConsumedFoodHeader) {
             if (type != null) {
                 clearPendingConsumption();
-                applyConsumption(type, clean, now);
+                applyConsumption(type);
             } else {
                 pendingConsumptionSignal = clean;
                 pendingConsumptionUntilMs = now + CONSUMPTION_CLASSIFY_WINDOW_MS;
@@ -478,9 +472,8 @@ public final class FoodStack {
         if (type != null
                 && !pendingConsumptionSignal.isEmpty()
                 && now <= pendingConsumptionUntilMs) {
-            String signalSource = pendingConsumptionSignal;
             clearPendingConsumption();
-            applyConsumption(type, signalSource, now);
+            applyConsumption(type);
         }
     }
 
@@ -494,18 +487,9 @@ public final class FoodStack {
         return thirst ? ConsumptionType.DRINK : ConsumptionType.FOOD;
     }
 
-    private static void applyConsumption(
-            ConsumptionType type,
-            String signalSource,
-            long now
-    ) {
-        String signal = type.name() + "|" + signalSource;
-        if (signal.equals(lastSignal) && now < dedupeUntilMs) {
-            return;
-        }
-
-        lastSignal = signal;
-        dedupeUntilMs = now + DEDUPE_WINDOW_MS;
+    private static void applyConsumption(ConsumptionType type) {
+        // Count every completed consumption event; do not discard identical
+        // events based on their text or a short time window.
         consumptionSerial++;
 
         if (type == ConsumptionType.DRINK) {
@@ -563,16 +547,12 @@ public final class FoodStack {
         foodStack = 0;
         drinkStack = 0;
         lastBuffResetMs = 0L;
-        lastSignal = "";
-        dedupeUntilMs = 0L;
         clearPendingConsumption();
     }
 
     private static void restoreSnapshot() {
         foodStack = Math.min(snapshotFoodStack, foodSegments);
         drinkStack = snapshotDrinkStack;
-        lastSignal = snapshotLastSignal;
-        dedupeUntilMs = snapshotDedupeUntilMs;
         clearPendingConsumption();
     }
 

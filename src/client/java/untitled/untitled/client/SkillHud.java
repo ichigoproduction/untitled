@@ -50,9 +50,6 @@ public final class SkillHud {
     private static final long ZERO_DISPLAY_DURATION = SECOND;
     // Observed 0.65s correction was ~0.25s late; 0.90s is a trial value.
     private static final long SERVER_READY_CORRECTION = 900_000_000L;
-    // Receiving the same packet through packet/HUD/Fabric hooks must not
-    // process one cast multiple times (distinct rapid casts are unaffected).
-    private static final long DUPLICATE_WINDOW = 150_000_000L;
     private static final long RECAST_GRACE = 750_000_000L;
     private static final int GAP = 3;
     private static final int MARGIN = 3;
@@ -66,8 +63,6 @@ public final class SkillHud {
     private static float scale = 1.0f;
     private static int offsetX, offsetY;
     private static ClientPlayNetworkHandler lastConnection;
-    private static String lastActionbar = "";
-    private static long lastActionbarNano;
     private static EditHud.HudBounds editorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private SkillHud() {}
@@ -228,13 +223,6 @@ public final class SkillHud {
         if (text == null || client.player == null || client.world == null) return;
         String content = normalizeActionbar(text.getString());
         if (content.isEmpty()) return;
-        long now = System.nanoTime();
-        // The same overlay is observable at three different interception
-        // points. Do not mistake these duplicate callbacks for separate casts.
-        if (content.equals(lastActionbar)
-                && now - lastActionbarNano < DUPLICATE_WINDOW) return;
-        lastActionbar = content;
-        lastActionbarNano = now;
         onActionbar(content);
     }
 
@@ -402,8 +390,6 @@ public final class SkillHud {
         if (current != lastConnection) {
             if (lastConnection != null) {
                 EXPIRY.clear();
-                lastActionbar = "";
-                lastActionbarNano = 0L;
             }
             lastConnection = current;
         }

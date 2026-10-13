@@ -21,7 +21,6 @@ public final class SyringeCooldownHud {
             "남은\\s*시간\\s*:\\s*(\\d+)\\s*초"
     );
     private static final long SECOND_NANOS = 1_000_000_000L;
-    private static final long DUPLICATE_WINDOW_NANOS = 300_000_000L;
     private static final int COOLDOWN_SECONDS = 60;
     private static final int DEFAULT_OFFSET_Y = 44;
     private static final int SCREEN_MARGIN = 3;
@@ -35,8 +34,6 @@ public final class SyringeCooldownHud {
     private static int offsetY = 0;
 
     private static long expiresAtNanos = 0L;
-    private static long lastMessageNanos = 0L;
-    private static String lastMessageKey = "";
     private static ClientPlayNetworkHandler lastNetworkHandler = null;
     private static EditHud.HudBounds lastEditorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
@@ -84,8 +81,6 @@ public final class SyringeCooldownHud {
             // message may already have arrived before this first client tick.
             if (lastNetworkHandler != null) {
                 expiresAtNanos = 0L;
-                lastMessageNanos = 0L;
-                lastMessageKey = "";
             }
             lastNetworkHandler = current;
         }
@@ -99,11 +94,9 @@ public final class SyringeCooldownHud {
 
         String clean = message.replace('\u00A0', ' ').trim();
         int seconds;
-        String key;
 
         if (clean.contains("체력을 회복하였습니다.")) {
             seconds = COOLDOWN_SECONDS;
-            key = "heal";
         } else if (clean.contains("쿨타임 중입니다.")) {
             Matcher matcher = REMAINING_SECONDS.matcher(clean);
             if (!matcher.find()) {
@@ -114,18 +107,11 @@ public final class SyringeCooldownHud {
             } catch (NumberFormatException ignored) {
                 return;
             }
-            key = "cooldown:" + seconds;
         } else {
             return;
         }
 
-        long now = System.nanoTime();
-        if (key.equals(lastMessageKey) && now - lastMessageNanos < DUPLICATE_WINDOW_NANOS) {
-            return;
-        }
-        lastMessageKey = key;
-        lastMessageNanos = now;
-        expiresAtNanos = seconds <= 0 ? 0L : now + seconds * SECOND_NANOS;
+        expiresAtNanos = seconds <= 0 ? 0L : System.nanoTime() + seconds * SECOND_NANOS;
     }
 
     private static int remainingSeconds() {
