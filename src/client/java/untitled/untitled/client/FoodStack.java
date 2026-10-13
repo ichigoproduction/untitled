@@ -36,7 +36,6 @@ public final class FoodStack {
     private static final int DRINK_FILLED_BACKGROUND = 0xFF69C9FF;
     private static final int FILLED_HIGHLIGHT = 0x99FFFFFF;
 
-    private static final long BUFF_RESET_DEDUPE_WINDOW_MS = 180L;
     private static final long CONSUMPTION_CLASSIFY_WINDOW_MS = 1_000L;
     private static final long LOBBY_RESET_DELAY_MS = 180L;
     private static final long LOBBY_RETRY_WINDOW_MS = 5_000L;
@@ -66,8 +65,6 @@ public final class FoodStack {
     private static int foodStack = 0;
     private static int drinkStack = 0;
 
-    // A buff message can arrive through multiple message callbacks.
-    private static long lastBuffResetMs = 0L;
     private static String pendingConsumptionSignal = "";
     private static long pendingConsumptionUntilMs = 0L;
     private static RegistryKey<World> lastWorldKey = null;
@@ -414,17 +411,11 @@ public final class FoodStack {
         String clean = normalize(raw);
         handleRetryMessage(clean);
         if (clean.contains("음식 버프 적용!")) {
-            long now = System.currentTimeMillis();
-            // If chat and game callbacks deliver the same buff event twice,
-            // the duplicate must not erase a genuine new stack in between.
-            if (lastBuffResetMs != 0L && now - lastBuffResetMs < BUFF_RESET_DEDUPE_WINDOW_MS) {
-                return;
-            }
-            lastBuffResetMs = now;
+            // Apply every actual server buff notification without an
+            // artificial time-based ignore window.
             resetFoodStack();
-            // Only abandon a consumption sequence already pending before
-            // the buff. Do not suppress the next complete food event:
-            // the player may have eaten again immediately after activation.
+            // Discard an incomplete consumption sequence that predates
+            // this buff, but allow the next meal immediately.
             clearPendingConsumption();
             return;
         }
@@ -546,7 +537,6 @@ public final class FoodStack {
     private static void resetAllStacks() {
         foodStack = 0;
         drinkStack = 0;
-        lastBuffResetMs = 0L;
         clearPendingConsumption();
     }
 
