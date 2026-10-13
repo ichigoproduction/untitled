@@ -1,10 +1,15 @@
 package untitled.untitled.client;
 
 import net.fabricmc.api.ClientModInitializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class UntitledClient implements ClientModInitializer {
+    private static final Logger LOGGER = LoggerFactory.getLogger("untitled/startup");
+
     @Override
     public void onInitializeClient() {
+        LOGGER.info("untitled client initialization started");
         EditHud.register();
         PartyHud.init();
         FoodStack.init();
@@ -15,5 +20,6 @@ public class UntitledClient implements ClientModInitializer {
         ItemModelOverrides.init();
         ItemModelRuntime.init();
         ItemSoundInspector.init();
+        LOGGER.info("untitled client initialization finished: HUDs, commands, models and inspectors registered");
     }
 }

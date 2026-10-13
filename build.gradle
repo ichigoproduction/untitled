@@ -98,3 +98,49 @@ publishing {
         // retrieving dependencies.
     }
 }
+
+// Ensure that the distributable (remapped) JAR actually contains compiled
+// client code. This detects accidentally empty or source-only mod builds.
+tasks.register("verifyModJar") {
+    group = "verification"
+    description = "Check executable client classes and entrypoint in built mod JAR"
+    dependsOn tasks.named("remapJar")
+    doLast {
+        def modJar = tasks.named("remapJar").get().archiveFile.get().asFile
+        if (!modJar.isFile()) {
+            throw new GradleException("Remapped mod JAR is missing: " + modJar)
+        }
+        def needed = [
+            "fabric.mod.json",
+            "untitled.client.mixins.json",
+            "untitled/untitled/client/UntitledClient.class",
+            "untitled/untitled/client/EditHud.class",
+            "untitled/untitled/client/PartyHud.class",
+            "untitled/untitled/client/FoodStack.class",
+            "untitled/untitled/client/SyringeCooldownHud.class",
+            "untitled/untitled/client/SkillHud.class",
+            "untitled/untitled/client/ItemModelCache.class",
+            "untitled/untitled/client/ItemModelInspector.class",
+            "untitled/untitled/client/ItemModelOverrides.class",
+            "untitled/untitled/client/ItemModelRuntime.class",
+            "untitled/untitled/client/ItemSoundInspector.class",
+            "assets/untitled/skill_catalog.json"
+        ]
+        new java.util.zip.ZipFile(modJar).withCloseable { zip ->
+            def missing = needed.findAll { zip.getEntry(it) == null }
+            if (!missing.isEmpty()) {
+                throw new GradleException("Missing client features in mod JAR: " + missing)
+            }
+            def metadata = new groovy.json.JsonSlurper().parseText(
+                zip.getInputStream(zip.getEntry("fabric.mod.json")).getText("UTF-8")
+            )
+            if (!metadata.entrypoints?.client?.contains("untitled.untitled.client.UntitledClient")) {
+                throw new GradleException("Fabric client entrypoint missing from mod metadata")
+            }
+        }
+        logger.lifecycle("Playable client mod JAR verified: " + modJar.name)
+    }
+}
+tasks.named("build") {
+    dependsOn tasks.named("verifyModJar")
+}
