@@ -10,7 +10,9 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
+import net.minecraft.text.TextColor;
 
 import java.io.Reader;
 import java.nio.file.Files;
@@ -54,14 +56,13 @@ public final class Glow {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(literal("glow")
                     .executes(ctx -> {
-                        notifyUser("Glow " + (enabled ? "ON" : "OFF")
-                                + " | My color: " + hex(selfColor) + " | Players: " + targets.size());
+                        showStatus();
                         return 1;
                     })
                     .then(literal("toggle").executes(ctx -> {
                         enabled = !enabled;
                         save();
-                        notifyUser("Glow " + (enabled ? "ON" : "OFF"));
+                        success(gray("Glow ").append(stateText()));
                         return 1;
                     }))
                     .then(literal("color")
@@ -70,12 +71,12 @@ public final class Glow {
                                     .executes(ctx -> {
                                         Integer value = parseColor(StringArgumentType.getString(ctx, "color"));
                                         if (value == null) {
-                                            notifyUser("Unknown color. Use RRGGBB or a named color.");
+                                            failure(gray("Unknown color").append(dim(" (RRGGBB or named color)")));
                                             return 0;
                                         }
                                         selfColor = value;
                                         save();
-                                        notifyUser("My Glow color: " + hex(selfColor));
+                                        success(gray("My color ").append(dim("→ ")).append(rgbText(selfColor)));
                                         return 1;
                                     })))
                     .then(literal("remove")
@@ -85,14 +86,13 @@ public final class Glow {
                     .then(literal("clear").executes(ctx -> {
                         targets.clear();
                         save();
-                        notifyUser("All registered players removed.");
+                        success(gray("Registered players ").append(dim("→ ")).append(red("CLEARED")));
                         return 1;
                     }))
                     .then(literal("list").executes(ctx -> {
-                        notifyUser("Glow: " + (enabled ? "ON" : "OFF")
-                                + " | Self: " + hex(selfColor) + " | Players: " + targets.size());
+                        showStatus();
                         for (Target target : targets.values()) {
-                            notifyUser("  " + target.name() + ": " + hex(target.color()));
+                            info(whiteBold(target.name()).append(dim(" → ")).append(rgbText(target.color())));
                         }
                         return 1;
                     }))
@@ -146,12 +146,12 @@ public final class Glow {
     private static int addOrUpdate(String name, String requestedColor) {
         Integer rgb = requestedColor == null ? null : parseColor(requestedColor);
         if (requestedColor != null && rgb == null) {
-            notifyUser("Unknown color: " + requestedColor);
+            failure(gray("Unknown color ").append(whiteBold(requestedColor)));
             return 0;
         }
         UUID uuid = resolveUuid(name);
         if (uuid == null) {
-            notifyUser("Player not found. Join the same server or use a previously registered name.");
+            failure(gray("Player not found").append(dim(" (online or previously registered only)")));
             return 0;
         }
         MinecraftClient client = MinecraftClient.getInstance();
@@ -159,9 +159,9 @@ public final class Glow {
             if (rgb != null) {
                 selfColor = rgb;
                 save();
-                notifyUser("My Glow color: " + hex(selfColor));
+                success(gray("My color ").append(dim("→ ")).append(rgbText(selfColor)));
             } else {
-                notifyUser("Your Glow is configured via /glow color <color>.");
+                info(gray("Set your color with ").append(whiteBold("/glow color <color>")));
             }
             return 1;
         }
@@ -174,18 +174,18 @@ public final class Glow {
         int assigned = rgb != null ? rgb : (previous == null ? DEFAULT_COLOR : previous.color());
         targets.put(uuid, new Target(canonicalName, assigned));
         save();
-        notifyUser("Glow target: " + canonicalName + " " + hex(assigned));
+        success(gray("Player ").append(whiteBold(canonicalName)).append(dim(" → ")).append(rgbText(assigned)));
         return 1;
     }
 
     private static int remove(String name) {
         UUID uuid = resolveUuid(name);
         if (uuid == null || targets.remove(uuid) == null) {
-            notifyUser("Not registered: " + name);
+            failure(gray("Not registered ").append(whiteBold(name)));
             return 0;
         }
         save();
-        notifyUser("Glow target removed: " + name);
+        success(gray("Removed ").append(whiteBold(name)));
         return 1;
     }
 
@@ -237,10 +237,85 @@ public final class Glow {
         return String.format(Locale.ROOT, "#%06X", rgb & 0xFFFFFF);
     }
 
-    private static void notifyUser(String message) {
+    // Match Skin/Cape chat styling: pastel gradient [152] and distinct result colors.
+    private static MutableText header() {
+        return Text.empty()
+                .append(tint("[", 0x666666, false))
+                .append(gradient("152", 0xFFE4FF, 0xC0FFFF))
+                .append(tint("] ", 0x666666, false))
+                .append(whiteBold("Glow "))
+                .append(tint("• ", 0x777777, false));
+    }
+
+    private static void send(MutableText message) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client != null && client.inGameHud != null)
-            client.inGameHud.getChatHud().addMessage(Text.literal("[untitled] " + message));
+        if (client != null && client.inGameHud != null) {
+            client.inGameHud.getChatHud().addMessage(header().append(message));
+        }
+    }
+
+    private static void success(MutableText message) {
+        send(green("✓ ").append(message));
+    }
+
+    private static void failure(MutableText message) {
+        send(red("✖ ").append(message));
+    }
+
+    private static void info(MutableText message) {
+        send(dim("… ").append(message));
+    }
+
+    private static void showStatus() {
+        info(gray("Status ").append(stateText())
+                .append(dim("  |  My color: ")).append(rgbText(selfColor))
+                .append(dim("  |  Players: ")).append(whiteBold(Integer.toString(targets.size()))));
+    }
+
+    private static MutableText stateText() {
+        return enabled ? green("ON") : red("OFF");
+    }
+
+    private static MutableText rgbText(int rgb) {
+        return tint(hex(rgb), rgb & 0xFFFFFF, true);
+    }
+
+    private static MutableText gray(String value) {
+        return tint(value, 0xAAAAAA, false);
+    }
+
+    private static MutableText dim(String value) {
+        return tint(value, 0x777777, false);
+    }
+
+    private static MutableText whiteBold(String value) {
+        return tint(value, 0xFFFFFF, true);
+    }
+
+    private static MutableText green(String value) {
+        return tint(value, 0x9CFF6F, true);
+    }
+
+    private static MutableText red(String value) {
+        return tint(value, 0xFF5577, true);
+    }
+
+    private static MutableText tint(String value, int rgb, boolean bold) {
+        return Text.literal(value).styled(style -> style
+                .withColor(TextColor.fromRgb(rgb)).withBold(bold));
+    }
+
+    private static MutableText gradient(String value, int start, int end) {
+        MutableText text = Text.empty();
+        if (value.isEmpty()) return text;
+        for (int i = 0; i < value.length(); i++) {
+            float t = value.length() == 1 ? 0.0f : (float) i / (value.length() - 1);
+            int r = (int) (((start >> 16) & 0xFF) * (1.0f - t) + ((end >> 16) & 0xFF) * t);
+            int g = (int) (((start >> 8) & 0xFF) * (1.0f - t) + ((end >> 8) & 0xFF) * t);
+            int b = (int) ((start & 0xFF) * (1.0f - t) + (end & 0xFF) * t);
+            text.append(tint(String.valueOf(value.charAt(i)), (r << 16) | (g << 8) | b, true));
+        }
+        return text;
     }
 
     private static void load() {
@@ -290,7 +365,7 @@ public final class Glow {
                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.WRITE);
         } catch (Exception e) {
-            notifyUser("Unable to save Glow settings: " + e.getMessage());
+            failure(gray("Unable to save Glow settings ").append(dim("(" + e.getClass().getSimpleName() + ")")));
         }
     }
 }

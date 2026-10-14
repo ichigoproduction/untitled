@@ -1150,7 +1150,7 @@ public class SkinChanger {
         MutableText out = Text.empty();
         out.append(Text.literal("[")
                 .styled(s -> s.withColor(TextColor.fromRgb(0x666666))));
-        out.append(gradient("untitled", 0xFFE4FF, 0xC0FFFF, true));
+        out.append(gradient("152", 0xFFE4FF, 0xC0FFFF, true));
         out.append(Text.literal("] ")
                 .styled(s -> s.withColor(TextColor.fromRgb(0x666666))));
         out.append(Text.literal("Skin ")
