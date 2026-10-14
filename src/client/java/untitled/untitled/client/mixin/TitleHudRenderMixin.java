@@ -32,7 +32,7 @@ public abstract class TitleHudRenderMixin {
         ci.cancel();
         if (titleRemainTicks <= 0 || (title == null && subtitle == null)) return;
 
-        float remaining = titleRemainTicks - tickCounter.getTickProgress(false);
+        float remaining = titleRemainTicks - tickCounter.getTickDelta(false);
         int alpha = 255;
         if (titleRemainTicks > titleFadeOutTicks + titleStayTicks && titleFadeInTicks > 0) {
             float elapsed = titleFadeInTicks + titleStayTicks + titleFadeOutTicks - remaining;
