@@ -2,6 +2,7 @@
 
 ## Glow
 - `/glow toggle` toggles all locally managed outlines (self + registered targets). Vanilla/server glow is untouched.
+- `/glow self toggle` toggles only the local player's custom outline; registered players remain unaffected. The self setting persists after restarting, and the global toggle still overrides it.
 - `/glow` shows current status.
 - `/glow <player>` registers an online player by UUID; reusing a previously saved name also works.
 - `/glow <player> <color>` registers or changes that player's RGB outline.
@@ -9,7 +10,7 @@
 - `/glow remove <player>`, `/glow clear`, `/glow list` manage registered players.
 - Color input: RRGGBB (e.g. FF77AA), 0xRRGGBB, or a name (red, green, blue, yellow, aqua, cyan, pink, purple, orange, lime, white, black, gray, lightgray). Use an unprefixed 6-digit hex value in commands for widest Brigadier compatibility.
 - Custom Glow starts OFF; run `/glow toggle` once to enable it. Registering a player while OFF retains the target until Glow is toggled ON.
-- Saved under `config/152_glow.json` with `enabled`, `selfColor`, and `players` (UUID -> name/color). The UUID list persists across sessions even while Glow is OFF.
+- Saved under `config/152_glow.json` with `enabled`, `selfEnabled`, `selfColor`, and `players` (UUID -> name/color). The UUID list and self preference persist across sessions even while Glow is OFF. Existing files without `selfEnabled` default to true for backward compatibility.
 - Only player entities loaded and rendered by this client can show an outline. No packets or server glow flags are modified.
 
 ## Skin and Cape

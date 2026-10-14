@@ -45,6 +45,9 @@ public final class Glow {
     );
 
     private static boolean enabled = false;
+    // The local player's Glow can be disabled independently of registered targets.
+    // Defaults to true to preserve behavior of existing 152_glow.json files.
+    private static boolean selfEnabled = true;
     private static int selfColor = DEFAULT_COLOR;
 
     private record Target(String name, int color) {}
@@ -65,6 +68,13 @@ public final class Glow {
                         success(gray("Glow ").append(stateText()));
                         return 1;
                     }))
+                    .then(literal("self")
+                            .then(literal("toggle").executes(ctx -> {
+                                selfEnabled = !selfEnabled;
+                                save();
+                                success(gray("Self Glow ").append(selfStateText()));
+                                return 1;
+                            })))
                     .then(literal("color")
                             .then(argument("color", StringArgumentType.word())
                                     .suggests((ctx, builder) -> suggestColors(builder))
@@ -217,7 +227,9 @@ public final class Glow {
             return null;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null) return null;
-        if (player.getUuid().equals(client.player.getUuid())) return selfColor;
+        if (player.getUuid().equals(client.player.getUuid())) {
+            return selfEnabled ? selfColor : null;
+        }
         Target target = targets.get(player.getUuid());
         return target == null ? null : target.color();
     }
@@ -268,12 +280,17 @@ public final class Glow {
 
     private static void showStatus() {
         info(gray("Status ").append(stateText())
+                .append(dim("  |  Self: ")).append(selfStateText())
                 .append(dim("  |  My color: ")).append(rgbText(selfColor))
                 .append(dim("  |  Players: ")).append(whiteBold(Integer.toString(targets.size()))));
     }
 
     private static MutableText stateText() {
         return enabled ? green("ON") : red("OFF");
+    }
+
+    private static MutableText selfStateText() {
+        return selfEnabled ? green("ON") : red("OFF");
     }
 
     private static MutableText rgbText(int rgb) {
@@ -323,6 +340,7 @@ public final class Glow {
         try (Reader reader = Files.newBufferedReader(CONFIG)) {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             if (root.has("enabled")) enabled = root.get("enabled").getAsBoolean();
+            if (root.has("selfEnabled")) selfEnabled = root.get("selfEnabled").getAsBoolean();
             if (root.has("selfColor")) {
                 Integer rgb = parseColor(root.get("selfColor").getAsString());
                 if (rgb != null) selfColor = rgb;
@@ -352,6 +370,7 @@ public final class Glow {
             Files.createDirectories(CONFIG.getParent());
             JsonObject root = new JsonObject();
             root.addProperty("enabled", enabled);
+            root.addProperty("selfEnabled", selfEnabled);
             root.addProperty("selfColor", hex(selfColor));
             JsonObject players = new JsonObject();
             for (Map.Entry<UUID, Target> entry : targets.entrySet()) {
