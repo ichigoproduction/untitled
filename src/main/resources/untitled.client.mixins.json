@@ -9,7 +9,8 @@
     "MinecraftClientMixin",
     "PlayerEntityRendererMixin",
     "SkillHudMessageMixin",
-    "SkillHudPacketMixin"
+    "SkillHudPacketMixin",
+    "TitleHudRenderMixin"
   ],
   "injectors": {
     "defaultRequire": 1

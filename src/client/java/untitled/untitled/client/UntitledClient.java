@@ -11,6 +11,7 @@ public class UntitledClient implements ClientModInitializer {
     public void onInitializeClient() {
         LOGGER.info("untitled client initialization started");
         EditHud.register();
+        TitleHud.init();
         PartyHud.init();
         FoodStack.init();
         SyringeCooldownHud.init();

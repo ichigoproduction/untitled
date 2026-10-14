@@ -252,6 +252,7 @@ public final class EditHud extends Screen {
             // loading party, food or syringe settings prevented this call
             // and silently reset skill selections on next save.
             readSection("skill", () -> SkillHud.readSettings(root));
+            readSection("title", () -> TitleHud.readSettings(root));
             readSection("party position", () -> {
                 int partyX = root.has("partyOffsetX")
                         ? root.get("partyOffsetX").getAsInt()
@@ -300,6 +301,7 @@ public final class EditHud extends Screen {
             FoodStack.writeSettings(root);
             SyringeCooldownHud.writeSettings(root);
             SkillHud.writeSettings(root);
+            TitleHud.writeSettings(root);
 
             temporary = Files.createTempFile(
                     CONFIG_PATH.getParent(), "152_hud-", ".tmp");

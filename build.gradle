@@ -124,6 +124,9 @@ tasks.register("verifyModJar") {
             "untitled/untitled/client/ItemModelOverrides.class",
             "untitled/untitled/client/ItemModelRuntime.class",
             "untitled/untitled/client/ItemSoundInspector.class",
+            "untitled/untitled/client/TitleHud.class",
+            "untitled/untitled/client/TitleHudScreen.class",
+            "untitled/untitled/client/mixin/TitleHudRenderMixin.class",
             "assets/untitled/skill_catalog.json"
         ]
         new java.util.zip.ZipFile(modJar).withCloseable { zip ->
