@@ -125,6 +125,11 @@ tasks.register("verifyModJar") {
             "untitled/untitled/client/ItemModelRuntime.class",
             "untitled/untitled/client/ItemSoundInspector.class",
             "untitled/untitled/client/TitleHud.class",
+            "untitled/untitled/client/Glow.class",
+            "untitled/untitled/client/SkinChanger.class",
+            "untitled/untitled/client/mixin/GlowOutlineMixin.class",
+            "untitled/untitled/client/mixin/GlowColorMixin.class",
+            "untitled/untitled/client/mixin/SkinChangerMixin.class",
             "untitled/untitled/client/TitleHudScreen.class",
             "untitled/untitled/client/mixin/TitleHudRenderMixin.class",
             "assets/untitled/skill_catalog.json"

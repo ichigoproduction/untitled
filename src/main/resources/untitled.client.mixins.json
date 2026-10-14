@@ -10,7 +10,10 @@
     "PlayerEntityRendererMixin",
     "SkillHudMessageMixin",
     "SkillHudPacketMixin",
-    "TitleHudRenderMixin"
+    "TitleHudRenderMixin",
+    "GlowOutlineMixin",
+    "GlowColorMixin",
+    "SkinChangerMixin"
   ],
   "injectors": {
     "defaultRequire": 1
