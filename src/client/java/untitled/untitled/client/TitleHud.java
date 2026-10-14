@@ -56,19 +56,6 @@ public final class TitleHud {
                         EditHud.saveSettings();
                         return 1;
                     }))
-                    .then(literal("hud")
-                            .executes(ctx -> {
-                                editorDelayTicks = 2;
-                                return 1;
-                            })
-                            .then(literal("reset").executes(ctx -> {
-                                titleOffsetX = 0;
-                                titleOffsetY = 0;
-                                subtitleOffsetX = 0;
-                                subtitleOffsetY = 0;
-                                EditHud.saveSettings();
-                                return 1;
-                            })))
                     .then(literal("size")
                             .then(argument("value", FloatArgumentType.floatArg(MIN_SIZE, MAX_SIZE))
                                     .executes(ctx -> {
@@ -104,6 +91,19 @@ public final class TitleHud {
                                                 EditHud.saveSettings();
                                                 return 1;
                                             })))));
+            dispatcher.register(literal("thud")
+                    .executes(ctx -> {
+                        editorDelayTicks = 2;
+                        return 1;
+                    })
+                    .then(literal("reset").executes(ctx -> {
+                        titleOffsetX = 0;
+                        titleOffsetY = 0;
+                        subtitleOffsetX = 0;
+                        subtitleOffsetY = 0;
+                        EditHud.saveSettings();
+                        return 1;
+                    })));
         });
 
         // Open on the client tick instead of inside the command dispatch.
