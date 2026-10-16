@@ -13,7 +13,10 @@
     "TitleHudRenderMixin",
     "GlowOutlineMixin",
     "GlowColorMixin",
-    "SkinChangerMixin"
+    "SkinChangerMixin",
+    "GhostHandledScreenMixin",
+    "GhostHotbarMixin",
+    "GhostFirstPersonMixin"
   ],
   "injectors": {
     "defaultRequire": 1

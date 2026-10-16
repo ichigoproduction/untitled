@@ -19,6 +19,7 @@ public class UntitledClient implements ClientModInitializer {
         SyringeCooldownHud.init();
         SkillHud.init();
         ItemModelCache.init();
+        GhostItemPreview.init();
         ItemModelInspector.init();
         ItemModelOverrides.init();
         ItemModelRuntime.init();

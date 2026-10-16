@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import untitled.untitled.client.ItemModelOverrides;
+import untitled.untitled.client.GhostItemPreview;
 
 @Mixin(PlayerEntityRenderer.class)
 public abstract class PlayerEntityRendererMixin {
@@ -44,6 +45,9 @@ public abstract class PlayerEntityRendererMixin {
                 ModelTransformationMode.THIRD_PERSON_LEFT_HAND,
                 player
         );
+
+        right = GhostItemPreview.forThirdPerson(Arm.RIGHT, right, player);
+        left = GhostItemPreview.forThirdPerson(Arm.LEFT, left, player);
 
         itemModels.updateForLivingEntity(
                 state.rightHandItemState,

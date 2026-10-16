@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 import untitled.untitled.client.ItemModelOverrides;
+import untitled.untitled.client.GhostItemPreview;
 
 @Mixin(HeldItemRenderer.class)
 public abstract class HeldItemRendererMixin {
@@ -23,6 +24,7 @@ public abstract class HeldItemRendererMixin {
         LivingEntity entity = args.get(0);
         ItemStack original = args.get(1);
         ModelTransformationMode mode = args.get(2);
+        if (GhostItemPreview.isGhostStack(original)) return;
         args.set(1, ItemModelOverrides.resolveFirstPersonStack(original, mode, entity));
     }
 }

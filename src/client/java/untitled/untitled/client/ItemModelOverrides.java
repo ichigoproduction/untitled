@@ -181,6 +181,7 @@ public final class ItemModelOverrides {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
             dispatcher.register(
                     literal("imodel")
+                            .then(GhostItemPreview.command())
                             .then(literal("toggle")
                                     .executes(context -> toggleEnabled(context.getSource())))
                             .then(literal("scope")
@@ -242,6 +243,53 @@ public final class ItemModelOverrides {
                                     )))
             );
         });
+    }
+
+    /** Preview only: resolve a saved model, observed cache entry, or vanilla item ID. */
+    static ItemStack previewStack(String name) {
+        if (name == null || name.isBlank()) return ItemStack.EMPTY;
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null) return ItemStack.EMPTY;
+
+        ModelRule rule = RULES.get(name);
+        if (rule != null) {
+            if (rule.kind() == RuleKind.VANILLA_ITEM) {
+                return createVanillaStack(rule.payload(), ItemStack.EMPTY);
+            }
+            ItemStack stack = decodePreviewNbt(rule.payload());
+            if (!stack.isEmpty()) return stack;
+        }
+        ItemModelCache.CachedItem cached = ItemModelCache.find(name);
+        if (cached != null) {
+            ItemStack stack = decodePreviewNbt(cached.payload());
+            if (!stack.isEmpty()) return stack;
+        }
+        String itemId = name.contains(":") ? name : "minecraft:" + name;
+        Identifier id = Identifier.tryParse(itemId);
+        if (id == null || !"minecraft".equals(id.getNamespace())
+                || !Registries.ITEM.containsId(id)) return ItemStack.EMPTY;
+        return new ItemStack(Registries.ITEM.get(id));
+    }
+
+    static java.util.Set<String> previewNames() {
+        java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+        for (Map.Entry<String, ModelRule> entry : RULES.entries()) names.add(entry.getKey());
+        for (String name : ItemModelCache.names()) names.add(name);
+        for (Identifier id : Registries.ITEM.getIds()) {
+            if ("minecraft".equals(id.getNamespace())) names.add(id.toString());
+        }
+        return names;
+    }
+
+    private static ItemStack decodePreviewNbt(String payload) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null || payload == null || payload.isBlank()) return ItemStack.EMPTY;
+        try {
+            return ItemStack.fromNbt(client.world.getRegistryManager(),
+                    StringNbtReader.parse(payload)).orElse(ItemStack.EMPTY);
+        } catch (Exception ignored) {
+            return ItemStack.EMPTY;
+        }
     }
 
     static boolean hasDrawnState(String itemName) {
