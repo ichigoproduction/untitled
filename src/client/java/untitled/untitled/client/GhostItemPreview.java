@@ -58,7 +58,7 @@ public final class GhostItemPreview {
         return literal("get")
                 .then(literal("clear").executes(ctx -> {
                     clear();
-                    ctx.getSource().sendFeedback(Text.literal("Ghost previews cleared."));
+                    ctx.getSource().sendFeedback(Text.literal("cleared"));
                     return 1;
                 }))
                 .then(argument("name", StringArgumentType.string())
