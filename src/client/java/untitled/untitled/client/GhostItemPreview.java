@@ -105,8 +105,7 @@ public final class GhostItemPreview {
             CHEST[chest] = stack.copyWithCount(count);
             destination = "ghost chest " + (chest + 1) + "/54 (open a chest to view)";
         }
-        message(source, "Ghost preview: " + name + " x" + count
-                + " → " + destination + " (client only)");
+        source.sendFeedback(Text.literal(name + " x" + count + " → " + destination));
         return 1;
     }
 
