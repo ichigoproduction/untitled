@@ -10,6 +10,11 @@ import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.screen.Generic3x3ContainerScreenHandler;
+import net.minecraft.screen.GenericContainerScreenHandler;
+import net.minecraft.screen.HopperScreenHandler;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.ShulkerBoxScreenHandler;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
@@ -27,13 +32,18 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.lit
  * Never calls PlayerInventory.setStack, ScreenHandler.onSlotClick or sends slot packets.
  */
 public final class GhostItemPreview {
-    private static final ItemStack[] SLOTS = new ItemStack[36];
+    private static final int PLAYER_COUNT = 36;
+    private static final int CHEST_COUNT = 54;
+    private static final ItemStack[] SLOTS = new ItemStack[PLAYER_COUNT];
+    // Shared across chest-like UIs; never saved or transmitted to a server.
+    private static final ItemStack[] CHEST = new ItemStack[CHEST_COUNT];
     private static ItemStack cursor = ItemStack.EMPTY;
     private static ClientWorld world;
     private static boolean started;
 
     static {
         Arrays.fill(SLOTS, ItemStack.EMPTY);
+        Arrays.fill(CHEST, ItemStack.EMPTY);
     }
 
     private GhostItemPreview() {}
@@ -82,13 +92,21 @@ public final class GhostItemPreview {
             return 0;
         }
         int slot = firstFreeSlot(client.player.getInventory());
-        if (slot < 0) {
-            source.sendError(Text.literal("[152] iModel • No empty inventory slot."));
-            return 0;
+        String destination;
+        if (slot >= 0) {
+            SLOTS[slot] = stack.copyWithCount(count);
+            destination = "player inventory";
+        } else {
+            int chest = firstFreeChest();
+            if (chest < 0) {
+                source.sendError(Text.literal("[152] iModel • Ghost inventory and chest storage are full."));
+                return 0;
+            }
+            CHEST[chest] = stack.copyWithCount(count);
+            destination = "ghost chest " + (chest + 1) + "/54 (open a chest to view)";
         }
-        SLOTS[slot] = stack.copyWithCount(count);
-        message(source, "Ghost preview: " + name + " x" + count + " (slot " + slot
-                + ", client only)");
+        message(source, "Ghost preview: " + name + " x" + count
+                + " → " + destination + " (client only)");
         return 1;
     }
 
@@ -98,6 +116,7 @@ public final class GhostItemPreview {
 
     public static void clear() {
         Arrays.fill(SLOTS, ItemStack.EMPTY);
+        Arrays.fill(CHEST, ItemStack.EMPTY);
         cursor = ItemStack.EMPTY;
     }
 
@@ -114,12 +133,21 @@ public final class GhostItemPreview {
         for (int i = 0; i < SLOTS.length; i++) {
             if (!inv.getStack(i).isEmpty()) SLOTS[i] = ItemStack.EMPTY;
         }
-        // A virtual stack must never be left on the cursor after the GUI closes.
+        // Return the ghost cursor to free virtual storage on closing a GUI.
+        // If all slots are occupied, retain the cursor for the next GUI.
         if (!(client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>)
                 && !cursor.isEmpty()) {
             int empty = firstFreeSlot(inv);
-            if (empty >= 0) SLOTS[empty] = cursor;
-            cursor = ItemStack.EMPTY;
+            if (empty >= 0) {
+                SLOTS[empty] = cursor;
+                cursor = ItemStack.EMPTY;
+            } else {
+                int chest = firstFreeChest();
+                if (chest >= 0) {
+                    CHEST[chest] = cursor;
+                    cursor = ItemStack.EMPTY;
+                }
+            }
         }
     }
 
@@ -133,21 +161,71 @@ public final class GhostItemPreview {
     }
 
     private static boolean available(PlayerInventory inventory, int index) {
-        return inventory.getStack(index).isEmpty() && SLOTS[index].isEmpty();
+        return index >= 0 && index < PLAYER_COUNT
+                && inventory.getStack(index).isEmpty() && SLOTS[index].isEmpty();
     }
 
+    private static int chestCapacity(ScreenHandler handler) {
+        if (handler instanceof GenericContainerScreenHandler chest) return chest.getRows() * 9;
+        if (handler instanceof ShulkerBoxScreenHandler) return 27;
+        if (handler instanceof HopperScreenHandler) return 5;
+        if (handler instanceof Generic3x3ContainerScreenHandler) return 9;
+        // Functional GUIs (crafting, furnaces, trades, anvils) are deliberately excluded.
+        return 0;
+    }
+
+    /** Player inventory [0..35], virtual chest [36..89]. */
     private static int ghostSlotIndex(Slot slot) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (slot == null || client.player == null
-                || slot.inventory != client.player.getInventory()) return -1;
+        if (slot == null || client.player == null) return -1;
+        if (slot.inventory == client.player.getInventory()) {
+            int index = slot.getIndex();
+            return index >= 0 && index < PLAYER_COUNT ? index : -1;
+        }
+        ScreenHandler handler = client.player.currentScreenHandler;
+        int cap = Math.min(CHEST_COUNT, chestCapacity(handler));
+        if (slot.id < 0 || slot.id >= cap) return -1;
         int index = slot.getIndex();
-        return index >= 0 && index < SLOTS.length ? index : -1;
+        return index >= 0 && index < cap ? PLAYER_COUNT + index : -1;
+    }
+
+    private static ItemStack virtualAt(int index) {
+        if (index < 0) return ItemStack.EMPTY;
+        return index < PLAYER_COUNT ? SLOTS[index] : CHEST[index - PLAYER_COUNT];
+    }
+
+    private static void setVirtual(int index, ItemStack stack) {
+        if (index < PLAYER_COUNT) SLOTS[index] = stack;
+        else CHEST[index - PLAYER_COUNT] = stack;
+    }
+
+    private static Slot visibleChestSlot(int chestIndex) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null) return null;
+        ScreenHandler handler = client.player.currentScreenHandler;
+        for (Slot slot : handler.slots) {
+            if (ghostSlotIndex(slot) == PLAYER_COUNT + chestIndex) return slot;
+        }
+        return null;
+    }
+
+    private static boolean freeChest(int index) {
+        if (index < 0 || index >= CHEST_COUNT || !CHEST[index].isEmpty()) return false;
+        Slot visible = visibleChestSlot(index);
+        return visible == null || visible.getStack().isEmpty();
+    }
+
+    private static int firstFreeChest() {
+        for (int i = 0; i < CHEST_COUNT; i++) {
+            if (freeChest(i)) return i;
+        }
+        return -1;
     }
 
     public static ItemStack forSlot(Slot slot) {
         int index = ghostSlotIndex(slot);
         if (index < 0 || !slot.getStack().isEmpty()) return ItemStack.EMPTY;
-        return SLOTS[index];
+        return virtualAt(index);
     }
 
     public static ItemStack forHotbar(int index, ItemStack actual) {
@@ -184,6 +262,9 @@ public final class GhostItemPreview {
         for (ItemStack ghost : SLOTS) {
             if (stack == ghost) return true;
         }
+        for (ItemStack ghost : CHEST) {
+            if (stack == ghost) return true;
+        }
         return false;
     }
 
@@ -196,92 +277,106 @@ public final class GhostItemPreview {
     }
 
     /**
-     * True means the click belongs to the virtual layer and must never be forwarded
-     * to the network. Clicking real items while holding a ghost cursor is blocked.
+     * Consume only virtual operations. Never modify a real stack or forward
+     * ghost movements to the server. Real-item slots always win.
      */
     public static boolean click(Slot slot, int button, SlotActionType action) {
         int index = ghostSlotIndex(slot);
-        ItemStack ghost = index < 0 ? ItemStack.EMPTY : forSlot(slot);
+        ItemStack ghost = forSlot(slot);
         if (ghost.isEmpty() && cursor.isEmpty()) return false;
 
-        // A real carried stack cannot interact with virtual slots.
         MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || client.player.currentScreenHandler == null) return true;
         if (!client.player.currentScreenHandler.getCursorStack().isEmpty()) return true;
-
         if (slot == null) {
-            if (action == SlotActionType.PICKUP || action == SlotActionType.THROW) cursor = ItemStack.EMPTY;
+            if (action == SlotActionType.PICKUP || action == SlotActionType.THROW) {
+                cursor = ItemStack.EMPTY;
+            }
             return true;
         }
         if (index < 0 || !slot.getStack().isEmpty()) return true;
+        if (!cursor.isEmpty() && action != SlotActionType.PICKUP) return true;
+
         if (action == SlotActionType.THROW) {
             if (!ghost.isEmpty()) {
-                if (button == 0 && ghost.getCount() > 1) {
-                    SLOTS[index] = ghost.copyWithCount(ghost.getCount() - 1);
-                } else SLOTS[index] = ItemStack.EMPTY;
+                setVirtual(index, button == 0 && ghost.getCount() > 1
+                        ? ghost.copyWithCount(ghost.getCount() - 1) : ItemStack.EMPTY);
             }
             return true;
         }
+
         if (action == SlotActionType.QUICK_MOVE) {
             if (!ghost.isEmpty()) {
-                PlayerInventory inv = client.player.getInventory();
-                int next = -1;
-                // Shift-click moves to the other inventory section, if possible.
-                for (int i = index < 9 ? 9 : 0; i < (index < 9 ? 36 : 9); i++) {
-                    if (available(inv, i)) { next = i; break; }
-                }
-                if (next < 0) {
-                    for (int i = 0; i < SLOTS.length; i++) {
-                        if (i != index && available(inv, i)) { next = i; break; }
-                    }
-                }
-                if (next >= 0) {
-                    SLOTS[index] = ItemStack.EMPTY;
-                    SLOTS[next] = ghost;
+                int dest = quickMoveTarget(index, client.player.getInventory());
+                if (dest >= 0) {
+                    setVirtual(index, ItemStack.EMPTY);
+                    setVirtual(dest, ghost);
                 }
             }
             return true;
         }
+
         if (action == SlotActionType.SWAP) {
             if (button >= 0 && button < 9 && index != button
                     && client.player.getInventory().getStack(button).isEmpty()) {
-                ItemStack previous = SLOTS[button];
+                ItemStack other = SLOTS[button];
                 SLOTS[button] = ghost;
-                SLOTS[index] = previous;
+                setVirtual(index, other);
             }
             return true;
         }
-        if (action != SlotActionType.PICKUP || (button != 0 && button != 1)) return true;
 
+        if (action != SlotActionType.PICKUP || (button != 0 && button != 1)) return true;
         if (cursor.isEmpty()) {
             if (ghost.isEmpty()) return false;
             if (button == 1 && ghost.getCount() > 1) {
-                int taken = (ghost.getCount() + 1) / 2;
-                cursor = ghost.copyWithCount(taken);
-                SLOTS[index] = ghost.copyWithCount(ghost.getCount() - taken);
+                int amount = (ghost.getCount() + 1) / 2;
+                cursor = ghost.copyWithCount(amount);
+                setVirtual(index, ghost.copyWithCount(ghost.getCount() - amount));
             } else {
                 cursor = ghost;
-                SLOTS[index] = ItemStack.EMPTY;
+                setVirtual(index, ItemStack.EMPTY);
             }
         } else if (ghost.isEmpty()) {
             if (button == 1 && cursor.getCount() > 1) {
-                SLOTS[index] = cursor.copyWithCount(1);
+                setVirtual(index, cursor.copyWithCount(1));
                 cursor = cursor.copyWithCount(cursor.getCount() - 1);
             } else {
-                SLOTS[index] = cursor;
+                setVirtual(index, cursor);
                 cursor = ItemStack.EMPTY;
             }
         } else if (ItemStack.areItemsAndComponentsEqual(ghost, cursor)
                 && ghost.getCount() < ghost.getMaxCount()) {
-            int moved = Math.min(button == 1 ? 1 : cursor.getCount(),
+            int amount = Math.min(button == 1 ? 1 : cursor.getCount(),
                     ghost.getMaxCount() - ghost.getCount());
-            SLOTS[index] = ghost.copyWithCount(ghost.getCount() + moved);
-            cursor = cursor.getCount() > moved
-                    ? cursor.copyWithCount(cursor.getCount() - moved) : ItemStack.EMPTY;
+            setVirtual(index, ghost.copyWithCount(ghost.getCount() + amount));
+            cursor = cursor.getCount() > amount
+                    ? cursor.copyWithCount(cursor.getCount() - amount) : ItemStack.EMPTY;
         } else if (button == 0) {
-            SLOTS[index] = cursor;
+            setVirtual(index, cursor);
             cursor = ghost;
         }
         return true;
+    }
+
+    private static int quickMoveTarget(int from, PlayerInventory inventory) {
+        if (from < PLAYER_COUNT) {
+            MinecraftClient client = MinecraftClient.getInstance();
+            int visibleCount = client.player == null
+                    ? 0 : Math.min(CHEST_COUNT, chestCapacity(client.player.currentScreenHandler));
+            // Player -> chest, if a chest is currently open.
+            for (int i = 0; i < visibleCount; i++) {
+                if (freeChest(i)) return PLAYER_COUNT + i;
+            }
+            for (int i = 0; i < PLAYER_COUNT; i++) {
+                if (i != from && available(inventory, i)) return i;
+            }
+        } else {
+            // Chest -> player, never to a server container slot.
+            for (int i = 0; i < PLAYER_COUNT; i++) {
+                if (available(inventory, i)) return i;
+            }
+        }
+        return -1;
     }
 }
