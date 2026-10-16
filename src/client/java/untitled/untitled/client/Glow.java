@@ -224,8 +224,8 @@ public final class Glow {
     /**
      * Render priority:
      *  1. Self Glow (controlled only by /glow toggle and /glow self toggle)
-     *  2. Party team/enemy Glow (controlled only by /party glow toggle)
-     *  3. Manual UUID-based Glow (controlled by /glow toggle)
+     *  2. Manual UUID-based Glow when /glow toggle is ON
+     *  3. Party team/enemy Glow (independently controlled by /party glow toggle)
      *  4. Vanilla outline rendering when none of the above applies
      */
     public static Integer colorFor(Entity entity) {
@@ -237,13 +237,14 @@ public final class Glow {
             return enabled && selfEnabled ? selfColor : null;
         }
 
-        // Independent of global /glow toggle: party affiliation takes precedence.
-        Integer partyColor = PartyHud.partyGlowColor(player.getUuid());
-        if (partyColor != null) return partyColor;
+        // Explicit UUID colors win while standalone Glow is enabled.
+        if (enabled) {
+            Target target = targets.get(player.getUuid());
+            if (target != null) return target.color();
+        }
 
-        if (!enabled) return null;
-        Target target = targets.get(player.getUuid());
-        return target == null ? null : target.color();
+        // Party Glow still works if standalone /glow toggle is OFF.
+        return PartyHud.partyGlowColor(player.getUuid());
     }
 
     private static Integer parseColor(String raw) {
