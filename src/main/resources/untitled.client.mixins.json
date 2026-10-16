@@ -16,7 +16,17 @@
     "SkinChangerMixin",
     "GhostHandledScreenMixin",
     "GhostHotbarMixin",
-    "GhostFirstPersonMixin"
+    "GhostFirstPersonMixin",
+    "OptimizerMixin$DisableShadowsMixin",
+    "OptimizerMixin$NoBreakParticlesMixin",
+    "OptimizerMixin$NoWeatherParticlesMixin",
+    "OptimizerMixin$FogVisionMixin",
+    "OptimizerMixin$DarknessPulseMixin",
+    "OptimizerMixin$AntiNauseaWobbleMixin",
+    "OptimizerMixin$InGameHudOverlayMixin",
+    "OptimizerMixin$FireWaterOverlayMixin",
+    "OptimizerMixin$PortalMenuMixin",
+    "OptimizerMixin$LoadingTerrainScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

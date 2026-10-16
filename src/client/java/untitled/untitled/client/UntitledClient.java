@@ -12,6 +12,7 @@ public class UntitledClient implements ClientModInitializer {
         LOGGER.info("untitled client initialization started");
         EditHud.register();
         TitleHud.init();
+        Optimizer.init();
         Glow.init();
         SkinChanger.init();
         PartyHud.init();
