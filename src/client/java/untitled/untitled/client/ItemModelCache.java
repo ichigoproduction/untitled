@@ -38,10 +38,16 @@ public final class ItemModelCache {
     private static final Path CACHE_PATH = FabricLoader.getInstance()
             .getConfigDir()
             .resolve("152_item_model_cache.json");
+    // Keep the toggle separate so switching it never rewrites the (potentially large) item cache.
+    private static final Path STATE_PATH = FabricLoader.getInstance()
+            .getConfigDir()
+            .resolve("152_item_model_cache_state.json");
     private static final Map<String, CachedItem> CACHE = new LinkedHashMap<>();
     private static final int PAGE_SIZE = 20;
 
     private static boolean initialized = false;
+    // Default ON for existing installations; a saved preference overrides this on launch.
+    private static boolean autoCacheEnabled = true;
 
     private ItemModelCache() {
     }
@@ -53,6 +59,7 @@ public final class ItemModelCache {
         initialized = true;
 
         loadSettings();
+        loadAutoCacheState();
         registerCommands();
         ClientTickEvents.END_CLIENT_TICK.register(ItemModelCache::scanVisibleItems);
     }
@@ -72,6 +79,8 @@ public final class ItemModelCache {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(
                         literal("imodelcache")
+                                .then(literal("toggle")
+                                        .executes(context -> toggleAutoCache(context.getSource())))
                                 .then(literal("list")
                                         .executes(context -> listCache(context.getSource(), 1))
                                         .then(argument("page", IntegerArgumentType.integer(1))
@@ -94,6 +103,9 @@ public final class ItemModelCache {
     }
 
     private static void scanVisibleItems(MinecraftClient client) {
+        if (!autoCacheEnabled) {
+            return;
+        }
         if (client == null || client.player == null || client.world == null) {
             return;
         }
@@ -143,6 +155,41 @@ public final class ItemModelCache {
             String itemId = Registries.ITEM.getId(snapshot.getItem()).toString();
             observed.put(name, new CachedItem(itemId, payload));
         } catch (Exception ignored) {
+        }
+    }
+
+    private static int toggleAutoCache(FabricClientCommandSource source) {
+        autoCacheEnabled = !autoCacheEnabled;
+        saveAutoCacheState();
+        source.sendFeedback(Text.literal("imodelcache → " + (autoCacheEnabled ? "ON" : "OFF")));
+        return 1;
+    }
+
+    private static void loadAutoCacheState() {
+        autoCacheEnabled = true;
+        if (!Files.isRegularFile(STATE_PATH)) {
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(STATE_PATH)) {
+            JsonObject root = GSON.fromJson(reader, JsonObject.class);
+            if (root != null && root.has("enabled")) {
+                autoCacheEnabled = root.get("enabled").getAsBoolean();
+            }
+        } catch (Exception ignored) {
+            // Keep the backwards-compatible ON default if settings are unreadable.
+        }
+    }
+
+    private static void saveAutoCacheState() {
+        try {
+            Files.createDirectories(STATE_PATH.getParent());
+            JsonObject root = new JsonObject();
+            root.addProperty("enabled", autoCacheEnabled);
+            Files.writeString(STATE_PATH, GSON.toJson(root),
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                    StandardOpenOption.WRITE);
+        } catch (IOException ignored) {
+            // The toggle still works this session if writing settings fails.
         }
     }
 
