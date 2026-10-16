@@ -49,6 +49,9 @@ public final class PartyHud {
     private static final int NAME_IDLE = 0xFFEFEFEF;
     private static final int NAME_TEAM = 0xFFA8F0C0;
     private static final int NAME_ENEMY = 0xFFFF9A9A;
+    // RGB outlines: soft lime for allies, coral red for enemies.
+    private static final int PARTY_GLOW_TEAM = 0xB6F27A;
+    private static final int PARTY_GLOW_ENEMY = 0xFF6577;
     private static final int DIST_COLOR = 0xFFD7E6FF;
     private static final int DY_COLOR = 0xFFBDC3C7;
     private static final int ARMOR_COLOR = 0xFFB7C7D9;
@@ -105,6 +108,8 @@ public final class PartyHud {
 
     private static boolean initialized = false;
     private static boolean loadingSettings = false;
+    // Opt-in and independent of /glow toggle. Stored in 152_hud.json.
+    private static boolean partyGlowEnabled = false;
     private static ViewMode viewMode = ViewMode.COMPACT;
     private static long lastCleanupMs = 0L;
     private static int offsetX = 0;
@@ -112,6 +117,26 @@ public final class PartyHud {
     private static EditHud.HudBounds lastEditorBounds = new EditHud.HudBounds(0, 0, 1, 1);
 
     private PartyHud() {
+    }
+
+    /**
+     * Resolved every render from the Party HUD's UUID targets, so changing a role,
+     * removing a player or clearing the party takes effect immediately.
+     * NEUTRAL and unregistered players do not receive party-specific outlines.
+     */
+    static Integer partyGlowColor(UUID playerUuid) {
+        if (!partyGlowEnabled || playerUuid == null) {
+            return null;
+        }
+        Targeting.TargetInfo info = Targeting.TARGETS.get(playerUuid);
+        if (info == null) {
+            return null;
+        }
+        return switch (info.affinity) {
+            case TEAM -> PARTY_GLOW_TEAM;
+            case ENEMY -> PARTY_GLOW_ENEMY;
+            case NEUTRAL -> null;
+        };
     }
 
     public static void init() {
@@ -175,6 +200,7 @@ public final class PartyHud {
     static void writeSettings(JsonObject root) {
         root.addProperty("partyViewMode", viewMode.name());
         root.addProperty("partySortMode", Targeting.getSortMode().name());
+        root.addProperty("partyGlowEnabled", partyGlowEnabled);
 
         JsonArray targets = new JsonArray();
         for (Targeting.TargetInfo target : Targeting.all()) {
@@ -190,6 +216,9 @@ public final class PartyHud {
     static void readSettings(JsonObject root) {
         loadingSettings = true;
         try {
+            partyGlowEnabled = root.has("partyGlowEnabled")
+                    && root.get("partyGlowEnabled").getAsBoolean();
+
             if (root.has("partyViewMode")) {
                 try {
                     viewMode = ViewMode.valueOf(root.get("partyViewMode").getAsString());
@@ -258,6 +287,14 @@ public final class PartyHud {
     private static void registerCommands() {
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(literal("party")
+                        .then(literal("glow")
+                                .executes(context -> showPartyGlowStatus(context.getSource()))
+                                .then(literal("toggle").executes(context -> {
+                                    partyGlowEnabled = !partyGlowEnabled;
+                                    saveSettings();
+                                    beep(partyGlowEnabled ? 1.12F : 0.92F);
+                                    return showPartyGlowStatus(context.getSource());
+                                })))
                         .then(argument("player", StringArgumentType.word())
                                 .suggests((context, builder) -> suggestPlayersForAdd(builder))
                                 .then(argument("role", StringArgumentType.word())
@@ -323,6 +360,18 @@ public final class PartyHud {
                                 })))
                 )
         );
+    }
+
+    private static int showPartyGlowStatus(
+            net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
+    ) {
+        source.sendFeedback(Text.literal("Party Glow → ")
+                .append(Text.literal(partyGlowEnabled ? "ON" : "OFF")
+                        .styled(style -> style
+                                .withColor(TextColor.fromRgb(partyGlowEnabled
+                                        ? PARTY_GLOW_TEAM : PARTY_GLOW_ENEMY))
+                                .withBold(true))));
+        return 1;
     }
 
     private static int resultCode(Targeting.AddResult result) {

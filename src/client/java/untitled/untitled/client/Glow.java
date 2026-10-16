@@ -221,15 +221,27 @@ public final class Glow {
         return colorFor(entity) != null;
     }
 
-    /** Only named player UUIDs get a color override; all other outlines keep vanilla RGB. */
+    /**
+     * Render priority:
+     *  1. Self Glow (controlled only by /glow toggle and /glow self toggle)
+     *  2. Party team/enemy Glow (controlled only by /party glow toggle)
+     *  3. Manual UUID-based Glow (controlled by /glow toggle)
+     *  4. Vanilla outline rendering when none of the above applies
+     */
     public static Integer colorFor(Entity entity) {
-        if (!enabled || !(entity instanceof PlayerEntity player) || !player.isAlive() || player.isSpectator())
+        if (!(entity instanceof PlayerEntity player) || !player.isAlive() || player.isSpectator())
             return null;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null) return null;
         if (player.getUuid().equals(client.player.getUuid())) {
-            return selfEnabled ? selfColor : null;
+            return enabled && selfEnabled ? selfColor : null;
         }
+
+        // Independent of global /glow toggle: party affiliation takes precedence.
+        Integer partyColor = PartyHud.partyGlowColor(player.getUuid());
+        if (partyColor != null) return partyColor;
+
+        if (!enabled) return null;
         Target target = targets.get(player.getUuid());
         return target == null ? null : target.color();
     }
