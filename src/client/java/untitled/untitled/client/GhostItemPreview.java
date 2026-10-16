@@ -58,7 +58,7 @@ public final class GhostItemPreview {
         return literal("get")
                 .then(literal("clear").executes(ctx -> {
                     clear();
-                    message(ctx.getSource(), "Ghost previews cleared.");
+                    ctx.getSource().sendFeedback(Text.literal("Ghost previews cleared."));
                     return 1;
                 }))
                 .then(argument("name", StringArgumentType.string())
@@ -107,10 +107,6 @@ public final class GhostItemPreview {
         }
         source.sendFeedback(Text.literal(name + " x" + count + " → " + destination));
         return 1;
-    }
-
-    private static void message(FabricClientCommandSource source, String body) {
-        source.sendFeedback(Text.literal("[152] iModel • " + body));
     }
 
     public static void clear() {
