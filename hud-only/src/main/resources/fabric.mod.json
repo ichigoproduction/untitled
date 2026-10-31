@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "hudonly",
+  "version": "${version}",
+  "name": "HUD Only",
+  "description": "Standalone client HUD editor, food/drink stacks and syringe cooldown",
+  "authors": [],
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "hudonly.client.HudOnlyClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

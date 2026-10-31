@@ -1,0 +1,32 @@
+name: Build HUD Only
+on:
+  push:
+    branches: [hud-only]
+    paths:
+      - 'hud-only/**'
+      - '.github/workflows/hud-only.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hud-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Build Fabric mod
+        run: gradle clean build --no-daemon
+      - name: Upload distributable mod JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: HUD-Only-Fabric-1.21.4
+          path: hud-only/build/libs/hudonly-1.0.3.jar
+          if-no-files-found: error
