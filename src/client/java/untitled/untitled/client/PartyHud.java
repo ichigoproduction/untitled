@@ -146,7 +146,7 @@ public final class PartyHud {
         initialized = true;
 
         HudRenderCallback.EVENT.register(PartyHud::render);
-        registerCommands();
+        // Party configuration is managed by AdditionalSettingsScreen.
     }
 
     public static void setModeDetail() {
