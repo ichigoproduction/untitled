@@ -546,4 +546,7 @@ public final class SkillHud {
             VISIBLE.putAll(restored);
         }
     }
+
+    public static boolean settingsEnabled() { return enabled; }
+    public static void toggleSettingsEnabled() { enabled = !enabled; EditHud.saveSettings(); }
 }
