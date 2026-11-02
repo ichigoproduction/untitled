@@ -2,9 +2,11 @@
   "schemaVersion": 1,
   "id": "untitled",
   "version": "${version}",
-  "name": "untitled",
+  "name": "152",
   "description": "",
-  "authors": [],
+  "authors": [
+    "1_5_2"
+  ],
   "contact": {},
   "license": "All-Rights-Reserved",
   "environment": "client",
