@@ -20,10 +20,19 @@ import net.minecraft.text.Text;
 
 import java.io.IOException;
 import java.io.Reader;
-import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -44,6 +53,16 @@ public final class ItemModelCache {
             .resolve("152_item_model_cache_state.json");
     private static final Map<String, CachedItem> CACHE = new LinkedHashMap<>();
     private static final int PAGE_SIZE = 20;
+    private static final Logger LOG = LoggerFactory.getLogger("untitled/ItemModelCache");
+    private static final ScheduledExecutorService SAVE_EXECUTOR =
+            Executors.newSingleThreadScheduledExecutor(task -> {
+                Thread thread = new Thread(task, "152-item-cache-writer");
+                thread.setDaemon(true);
+                return thread;
+            });
+    private static final Object SAVE_LOCK = new Object();
+    private static ScheduledFuture<?> pendingWrite;
+    private static final long SAVE_DEBOUNCE_MS = 1500L;
 
     private static boolean initialized = false;
     // Default ON for existing installations; a saved preference overrides this on launch.
@@ -62,6 +81,7 @@ public final class ItemModelCache {
         loadAutoCacheState();
         // Cache configuration is managed by AdditionalSettingsScreen.
         ClientTickEvents.END_CLIENT_TICK.register(ItemModelCache::scanVisibleItems);
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> flushAndShutdown());
     }
 
     static CachedItem find(String itemName) {
@@ -303,13 +323,40 @@ public final class ItemModelCache {
         }
     }
 
+    /** Keep disk I/O and JSON serialization off the client render/tick thread. */
     private static void saveSettings() {
+        Map<String, CachedItem> snapshot = new LinkedHashMap<>(CACHE);
+        synchronized (SAVE_LOCK) {
+            if (pendingWrite != null) pendingWrite.cancel(false);
+            pendingWrite = SAVE_EXECUTOR.schedule(
+                    () -> writeSnapshot(snapshot), SAVE_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private static void flushAndShutdown() {
+        Map<String, CachedItem> snapshot = new LinkedHashMap<>(CACHE);
+        synchronized (SAVE_LOCK) {
+            if (pendingWrite != null) pendingWrite.cancel(false);
+            pendingWrite = SAVE_EXECUTOR.schedule(() -> writeSnapshot(snapshot), 0L, TimeUnit.MILLISECONDS);
+            SAVE_EXECUTOR.shutdown();
+        }
+        try {
+            if (!SAVE_EXECUTOR.awaitTermination(10, TimeUnit.SECONDS)) {
+                LOG.warn("Timed out flushing item model cache during shutdown");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Interrupted while flushing item model cache", e);
+        }
+    }
+
+    private static void writeSnapshot(Map<String, CachedItem> snapshot) {
+        Path temporary = null;
         try {
             Files.createDirectories(CACHE_PATH.getParent());
-
             JsonObject root = new JsonObject();
             JsonArray items = new JsonArray();
-            for (Map.Entry<String, CachedItem> entry : CACHE.entrySet()) {
+            for (Map.Entry<String, CachedItem> entry : snapshot.entrySet()) {
                 JsonObject object = new JsonObject();
                 object.addProperty("name", entry.getKey());
                 object.addProperty("itemId", entry.getValue().itemId());
@@ -317,15 +364,23 @@ public final class ItemModelCache {
                 items.add(object);
             }
             root.add("items", items);
-
-            try (Writer writer = Files.newBufferedWriter(
-                    CACHE_PATH,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING
-            )) {
-                GSON.toJson(root, writer);
+            temporary = Files.createTempFile(CACHE_PATH.getParent(), "152_item_model_cache-", ".tmp");
+            Files.writeString(temporary, GSON.toJson(root), StandardCharsets.UTF_8,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try {
+                Files.move(temporary, CACHE_PATH, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(temporary, CACHE_PATH, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException ignored) {
+            temporary = null;
+        } catch (IOException e) {
+            LOG.warn("Failed to save item model cache", e);
+        } finally {
+            if (temporary != null) {
+                try { Files.deleteIfExists(temporary); }
+                catch (IOException e) { LOG.warn("Failed to delete temporary cache file", e); }
+            }
         }
     }
 }
