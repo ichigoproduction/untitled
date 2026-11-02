@@ -5,7 +5,10 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 
-/** First iteration of the English HUD settings dashboard. */
+/**
+ * Vanilla-style, two-column HUD settings menu.
+ * All labels are English and all settings use the existing HUD persistence.
+ */
 public final class HudSettingsScreen extends Screen {
     private static final String[] NAMES = {
         "HUD Position", "Skill HUD", "Food HUD", "Drink HUD", "Syringe HUD", "Title HUD"
@@ -14,6 +17,10 @@ public final class HudSettingsScreen extends Screen {
         "Move on-screen widgets", "Skill cooldown display", "Food stack tracker",
         "Drink stack tracker", "Syringe cooldown", "Title and subtitle"
     };
+    private static final int BUTTON_WIDTH = 150;
+    private static final int BUTTON_HEIGHT = 20;
+    private static final int COLUMN_GAP = 10;
+    private static final int ROW_GAP = 5;
     private final Screen parent;
     private final int category;
 
@@ -30,39 +37,41 @@ public final class HudSettingsScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        int left = this.width / 2 - 155;
-        int top = Math.max(54, this.height / 2 - 88);
+        int left = width / 2 - (BUTTON_WIDTH * 2 + COLUMN_GAP) / 2;
+        int top = 48;
         if (category < 0) {
             for (int i = 0; i < NAMES.length; i++) {
                 final int target = i;
-                int x = left + (i % 2) * 160;
-                int y = top + (i / 2) * 48;
+                int x = left + (i % 2) * (BUTTON_WIDTH + COLUMN_GAP);
+                int y = top + (i / 2) * (BUTTON_HEIGHT + ROW_GAP);
                 addDrawableChild(ButtonWidget.builder(Text.literal(NAMES[i]),
                     button -> client.setScreen(new HudSettingsScreen(parent, target)))
-                    .dimensions(x, y, 150, 38).build());
+                    .dimensions(x, y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
             }
         } else {
-            int center = width / 2;
             if (category == 0 || category == 5) {
                 addDrawableChild(ButtonWidget.builder(Text.literal("Edit Positions"),
                     button -> {
                         client.setScreen(null);
                         if (category == 0) EditHud.openSettingsEditor();
                         else TitleHud.openSettingsEditor();
-                    }).dimensions(center - 110, top + 36, 220, 24).build());
+                    }).dimensions(left, top, BUTTON_WIDTH, BUTTON_HEIGHT).build());
             }
             if (category != 0) {
+                int toggleX = (category == 5) ? left + BUTTON_WIDTH + COLUMN_GAP : left;
                 addDrawableChild(ButtonWidget.builder(Text.literal(toggleLabel()), button -> {
                     toggleCategory();
                     button.setMessage(Text.literal(toggleLabel()));
-                }).dimensions(center - 110, top + 69, 220, 24).build());
+                }).dimensions(toggleX, top, BUTTON_WIDTH, BUTTON_HEIGHT).build());
             }
             addDrawableChild(ButtonWidget.builder(Text.literal("Back"),
                 button -> client.setScreen(new HudSettingsScreen(parent)))
-                .dimensions(center - 110, top + 112, 220, 24).build());
+                .dimensions(width / 2 - BUTTON_WIDTH / 2, top + 2 * (BUTTON_HEIGHT + ROW_GAP),
+                    BUTTON_WIDTH, BUTTON_HEIGHT).build());
         }
         addDrawableChild(ButtonWidget.builder(Text.literal("Done"),
-            button -> close()).dimensions(width / 2 - 70, height - 34, 140, 20).build());
+            button -> close()).dimensions(width / 2 - BUTTON_WIDTH / 2, height - 28,
+                BUTTON_WIDTH, BUTTON_HEIGHT).build());
     }
 
     private String toggleLabel() {
@@ -91,16 +100,12 @@ public final class HudSettingsScreen extends Screen {
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
-        int cx = width / 2;
-        context.drawCenteredTextWithShadow(textRenderer, "UNTITLED", cx, 20, 0xA8B8FF);
-        context.drawCenteredTextWithShadow(textRenderer, 
-            category < 0 ? "HUD SETTINGS" : NAMES[category], cx, 35, 0xFFFFFF);
-        if (category < 0) {
+        context.drawCenteredTextWithShadow(textRenderer,
+            category < 0 ? "untitled HUD Settings" : NAMES[category],
+            width / 2, 18, 0xFFFFFF);
+        if (category >= 0) {
             context.drawCenteredTextWithShadow(textRenderer,
-                "Choose a module to configure", cx, height - 53, 0xA8ACB8);
-        } else {
-            context.drawCenteredTextWithShadow(textRenderer,
-                DESCRIPTIONS[category], cx, Math.max(54, height / 2 - 88) + 10, 0xBFC5D3);
+                DESCRIPTIONS[category], width / 2, 33, 0xA0A0A0);
         }
     }
 
