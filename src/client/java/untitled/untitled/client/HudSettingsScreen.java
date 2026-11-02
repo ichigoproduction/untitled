@@ -41,6 +41,8 @@ public final class HudSettingsScreen extends Screen {
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Skin & Cape")));
             addButton("Optimizer", left + W + GAP, 148,
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Optimizer")));
+            addButton("Kill Effect", left + W + GAP, 173,
+                () -> client.setScreen(new AdditionalSettingsScreen(this, "Kill Effect")));
         } else {
             buildDetails(left);
         }
