@@ -79,7 +79,17 @@ public final class AdditionalSettingsScreen extends Screen {
                 button("Model Cache",l,y+50,()->open("Model Cache"));
                 button("Render Settings",r,y+50,()->open("Render Settings"));
                 button("Clear All Models",l,y+75,()->open("Clear Models Confirmation"));
-                button("Ghost Items: use /imodel get",r,y+75,()->{feedback="Ghost item command remains available";});
+                button("Ghost Item Preview",r,y+75,()->open("Ghost Item Preview"));
+            }
+            case "Ghost Item Preview" -> {
+                fields(y);
+                button("Create Ghost x1",l,y+25,()->{
+                    feedback=GhostItemPreview.settingsGive(first.getText(),1)?"Created":"Item not found or inventory full";
+                });
+                button("Create Ghost x64",r,y+25,()->{
+                    feedback=GhostItemPreview.settingsGive(first.getText(),64)?"Created":"Item not found or inventory full";
+                });
+                button("Clear Ghost Items",l,y+50,()->{GhostItemPreview.clear();feedback="Cleared";});
             }
             case "Manage Models" -> {
                 fields(y);
