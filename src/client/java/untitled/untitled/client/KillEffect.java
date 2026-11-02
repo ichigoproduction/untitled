@@ -319,6 +319,7 @@ public final class KillEffect {
         tickVoidBursts(world, nowMs);
         tickPotionDrops(world, nowMs);
         tickFireworks(world, nowMs);
+        tickHeadDrops(world, nowMs);
 
         if (tracks.isEmpty()) return;
 
@@ -417,18 +418,39 @@ public final class KillEffect {
             SoundCategory.PLAYERS, 0.65f, 1.6f, false);
     }
 
+    private static final java.util.List<HeadDrop> headDrops = new java.util.ArrayList<>();
+    private static final class HeadDrop {
+        final ClientWorld world;
+        final net.minecraft.entity.ItemEntity entity;
+        final long expires;
+        HeadDrop(ClientWorld world, net.minecraft.entity.ItemEntity entity, long expires) {
+            this.world = world; this.entity = entity; this.expires = expires;
+        }
+    }
+    private static void tickHeadDrops(ClientWorld world, long now) {
+        var it = headDrops.iterator();
+        while (it.hasNext()) {
+            HeadDrop drop = it.next();
+            if (drop.world != world || now >= drop.expires || drop.entity.isRemoved()) {
+                if (!drop.entity.isRemoved()) drop.entity.discard();
+                it.remove();
+            }
+        }
+    }
     private static void spawnHead(ClientWorld world, Vec3d pos, UUID uuid, String name) {
         ItemStack head = new ItemStack(Items.PLAYER_HEAD);
-        // Head effect is visual only: no server loot or inventory changes.
-        for (int i = 0; i < 32; i++) {
-            double angle = Math.random() * Math.PI * 2;
-            world.addParticle(new net.minecraft.particle.ItemStackParticleEffect(ParticleTypes.ITEM, head),
-                pos.x + Math.cos(angle)*0.16,
-                pos.y + 1.5 + Math.random()*0.25,
-                pos.z + Math.sin(angle)*0.16,
-                Math.cos(angle)*0.035, -0.06-Math.random()*0.10, Math.sin(angle)*0.035);
+        if (uuid != null && name != null) {
+            head.set(net.minecraft.component.DataComponentTypes.PROFILE,
+                new net.minecraft.component.type.ProfileComponent(new com.mojang.authlib.GameProfile(uuid, name)));
         }
-        world.playSound(pos.x,pos.y,pos.z, SoundEvents.ENTITY_ITEM_PICKUP,
+        // Cosmetic local-only item entity, automatically removed; never creates server loot.
+        net.minecraft.entity.ItemEntity drop = new net.minecraft.entity.ItemEntity(
+            world, pos.x, pos.y + 1.25, pos.z, head);
+        drop.setVelocity((Math.random() - 0.5) * 0.16, 0.24, (Math.random() - 0.5) * 0.16);
+        drop.setPickupDelayInfinite();
+        world.addEntity(drop);
+        headDrops.add(new HeadDrop(world, drop, System.currentTimeMillis() + 2400L));
+        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_ITEM_PICKUP,
             SoundCategory.PLAYERS, 0.85f, 0.65f, false);
     }
 
