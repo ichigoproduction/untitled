@@ -60,7 +60,7 @@ public final class ItemModelCache {
 
         loadSettings();
         loadAutoCacheState();
-        registerCommands();
+        // Cache configuration is managed by AdditionalSettingsScreen.
         ClientTickEvents.END_CLIENT_TICK.register(ItemModelCache::scanVisibleItems);
     }
 
