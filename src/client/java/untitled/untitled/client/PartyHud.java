@@ -110,6 +110,7 @@ public final class PartyHud {
     private static boolean loadingSettings = false;
     // Opt-in and independent of /glow toggle. Stored in 152_hud.json.
     private static boolean partyGlowEnabled = false;
+    private static boolean partyHudEnabled = true;
     private static ViewMode viewMode = ViewMode.COMPACT;
     private static long lastCleanupMs = 0L;
     private static int offsetX = 0;
@@ -198,6 +199,7 @@ public final class PartyHud {
     }
 
     static void writeSettings(JsonObject root) {
+        root.addProperty("partyHudEnabled", partyHudEnabled);
         root.addProperty("partyViewMode", viewMode.name());
         root.addProperty("partySortMode", Targeting.getSortMode().name());
         root.addProperty("partyGlowEnabled", partyGlowEnabled);
@@ -216,6 +218,7 @@ public final class PartyHud {
     static void readSettings(JsonObject root) {
         loadingSettings = true;
         try {
+            partyHudEnabled = !root.has("partyHudEnabled") || root.get("partyHudEnabled").getAsBoolean();
             partyGlowEnabled = root.has("partyGlowEnabled")
                     && root.get("partyGlowEnabled").getAsBoolean();
 
@@ -362,6 +365,8 @@ public final class PartyHud {
         );
     }
 
+    public static boolean settingsEnabled() { return partyHudEnabled; }
+    public static void toggleSettingsEnabled() { partyHudEnabled = !partyHudEnabled; saveSettings(); }
     public static boolean settingsGlow() { return partyGlowEnabled; }
     public static void toggleSettingsGlow() { partyGlowEnabled = !partyGlowEnabled; saveSettings(); }
     public static String settingsMode() { return viewMode.name(); }
@@ -478,7 +483,7 @@ public final class PartyHud {
         if (client == null || client.player == null || client.world == null) {
             return;
         }
-        if (client.currentScreen instanceof EditHud
+        if (!partyHudEnabled || client.currentScreen instanceof EditHud
                 || client.options.hudHidden
                 || Targeting.all().isEmpty()) {
             return;
