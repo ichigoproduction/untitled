@@ -101,20 +101,13 @@ public final class AdditionalSettingsScreen extends Screen {
                 button("Self Color",r,y+25,()->client.setScreen(new GlowColorScreen(this, "Self Glow Color", Glow::settingsSetColor)));
                 button("Manage Players",l,y+50,()->open("Glow Players"));
             }
-            case "Glow Self Color" -> {
-                fields(y);
-                button("Apply Color",l,y+25,()->{
-                    feedback=Glow.settingsSetColor(first.getText())?"Saved":"Enter a color or RRGGBB";
-                });
-            }
             case "Glow Players" -> {
-                fields(y);
-                button("Select: "+selectedGlow,l,y+25,this::chooseGlow);
-                button("Remove Selected",r,y+25,()->{
+                button("Select: "+selectedGlow,l,y,this::chooseGlow);
+                button("Remove Selected",r,y,()->{
                     Glow.settingsRemovePlayer(selectedGlow);selectedGlow="";refresh();
                 });
-                button("Add Player",l,y+50,()->open("Glow Add Player"));
-                button("Clear Players",r,y+50,()->open("Glow Clear Confirmation"));
+                button("Add Player",l,y+25,()->open("Glow Add Player"));
+                button("Clear Players",r,y+25,()->open("Glow Clear Confirmation"));
             }
             case "Glow Add Player" -> {
                 fields(y);
@@ -123,13 +116,6 @@ public final class AdditionalSettingsScreen extends Screen {
                     selectedGlow=first.getText();
                     client.setScreen(new GlowColorScreen(this, "Player Glow Color",
                         color -> Glow.settingsAddPlayer(selectedGlow, color)));
-                });
-            }
-            case "Glow Player Color" -> {
-                fields(y);
-                button("Save Player Color",l,y+25,()->{
-                    feedback=Glow.settingsAddPlayer(((AdditionalSettingsScreen)parent).selectedGlow,first.getText())
-                        ?"Saved":"Player not online or invalid color";
                 });
             }
             case "Glow Clear Confirmation" -> {
