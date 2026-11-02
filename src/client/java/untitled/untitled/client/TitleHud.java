@@ -62,7 +62,8 @@ public final class TitleHud {
     }
 
     public static boolean isEditorOpen() {
-        return MinecraftClient.getInstance().currentScreen instanceof TitleHudScreen;
+        return MinecraftClient.getInstance().currentScreen instanceof TitleHudScreen
+                || MinecraftClient.getInstance().currentScreen instanceof EditHud;
     }
 
     /**
