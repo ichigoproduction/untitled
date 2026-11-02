@@ -109,6 +109,21 @@ public final class GhostItemPreview {
         return 1;
     }
 
+    public static boolean settingsGive(String name, int count) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null || count < 1 || count > 64) return false;
+        ItemStack item = ItemModelOverrides.previewStack(name);
+        if (item.isEmpty()) return false;
+        int slot = firstFreeSlot(client.player.getInventory());
+        if (slot >= 0) SLOTS[slot] = item.copyWithCount(count);
+        else {
+            int chest = firstFreeChest();
+            if (chest < 0) return false;
+            CHEST[chest] = item.copyWithCount(count);
+        }
+        return true;
+    }
+
     public static void clear() {
         Arrays.fill(SLOTS, ItemStack.EMPTY);
         Arrays.fill(CHEST, ItemStack.EMPTY);
