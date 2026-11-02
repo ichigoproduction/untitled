@@ -35,6 +35,12 @@ public final class HudSettingsScreen extends Screen {
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Party HUD")));
             addButton("Item Model", left + W + GAP, 73,
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Item Model")));
+            addButton("Glow", left + W + GAP, 98,
+                () -> client.setScreen(new AdditionalSettingsScreen(this, "Glow")));
+            addButton("Skin & Cape", left + W + GAP, 123,
+                () -> client.setScreen(new AdditionalSettingsScreen(this, "Skin & Cape")));
+            addButton("Optimizer", left + W + GAP, 148,
+                () -> client.setScreen(new AdditionalSettingsScreen(this, "Optimizer")));
         } else {
             buildDetails(left);
         }
