@@ -32,16 +32,7 @@ public final class Optimizer {
         if (initialized) return;
         initialized = true;
         loadSettings();
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("optimizer")
-                        .then(literal("toggle").executes(context -> {
-                            enabled = !enabled;
-                            saveSettings();
-                            context.getSource().sendFeedback(
-                                    Text.literal("optimizer → " + (enabled ? "ON" : "OFF")));
-                            return 1;
-                        })))
-        );
+        // Optimizer is configured through Mod Menu; no chat command is registered.
     }
 
     public static void toggleSettingsEnabled() {
