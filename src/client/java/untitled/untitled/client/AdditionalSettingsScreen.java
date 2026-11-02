@@ -6,6 +6,9 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import java.util.List;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
+import java.util.ArrayList;
 
 /** Party and model configuration using vanilla controls. */
 public final class AdditionalSettingsScreen extends Screen {
@@ -13,6 +16,7 @@ public final class AdditionalSettingsScreen extends Screen {
     private final String page;
     private TextFieldWidget first;
     private String pendingModelName = null;
+    private String chosenVanillaId = "";
     private String feedback = "";
     private int index = 0;
     private String selectedModel = "";
@@ -33,6 +37,18 @@ public final class AdditionalSettingsScreen extends Screen {
         first = new TextFieldWidget(textRenderer, width / 2 - 155, y, 310, 20, Text.literal("Input"));
         first.setMaxLength(128);
         addDrawableChild(first);
+    }
+    private void chooseVanillaItem() {
+        List<String> options = new ArrayList<>();
+        for (Identifier id : Registries.ITEM.getIds()) {
+            if (!"minecraft".equals(id.getNamespace())) continue;
+            String label = Registries.ITEM.get(id).getName().getString();
+            options.add(label + " | " + id);
+        }
+        client.setScreen(new ModelSelectionScreen(this, "Select Vanilla Item", options, choice -> {
+            int separator = choice.lastIndexOf(" | ");
+            chosenVanillaId = separator >= 0 ? choice.substring(separator + 3) : choice;
+        }));
     }
     private void chooseModel() {
         client.setScreen(new ModelSelectionScreen(this, "Select Model",
@@ -116,6 +132,7 @@ public final class AdditionalSettingsScreen extends Screen {
             }
             case "Manage Models" -> {
                 fields(y);
+                if (pendingModelName != null && !chosenVanillaId.isEmpty()) first.setText(chosenVanillaId);
                 List<String> models=ItemModelOverrides.settingsNames();
                 button("Select: "+selectedModel,l,y+25,this::chooseModel);
                 button("Remove Selected",r,y+25,()->{ if (!selectedModel.isEmpty()) open("Remove Model Confirmation"); });
@@ -123,13 +140,21 @@ public final class AdditionalSettingsScreen extends Screen {
                     if (pendingModelName == null) {
                         if (first.getText().isBlank()) { feedback = "Enter a model name"; return; }
                         pendingModelName = first.getText();
+                        chosenVanillaId = "";
                         first.setText("");
                         feedback = "Enter item ID for " + pendingModelName;
                     } else {
                         feedback = ItemModelOverrides.settingsMapVanilla(pendingModelName, first.getText())
                             ? "Saved" : "Invalid item ID";
-                        if (feedback.equals("Saved")) { pendingModelName = null; first.setText(""); }
+                        if (feedback.equals("Saved")) { pendingModelName = null; chosenVanillaId = ""; first.setText(""); }
                     }
+                });
+                button("Select Vanilla Item",r,y+50,()->{
+                    if (pendingModelName == null) {
+                        feedback = "Set model name first";
+                        return;
+                    }
+                    chooseVanillaItem();
                 });
             }
             case "Copy Held Item" -> {
