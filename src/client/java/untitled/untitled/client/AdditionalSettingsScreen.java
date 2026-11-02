@@ -27,12 +27,16 @@ public final class AdditionalSettingsScreen extends Screen {
                 .dimensions(x,y,150,20).build());
     }
     private void fields(int y) {
-        first = new TextFieldWidget(textRenderer, width / 2 - 155, y, 150, 20, Text.literal("Name"));
+        first = new TextFieldWidget(textRenderer, width / 2 - 155, y, 310, 20, Text.literal("Input"));
         first.setMaxLength(128);
         addDrawableChild(first);
     }
     private void open(String p) { client.setScreen(new AdditionalSettingsScreen(this,p)); }
-    private void refresh() { clearAndInit(); }
+    private void refresh() {
+        String current = first == null ? null : first.getText();
+        clearAndInit();
+        if (current != null && first != null) first.setText(current);
+    }
     private String selected(List<String> items) {
         if (items.isEmpty()) return "";
         index = Math.floorMod(index,items.size());
@@ -128,7 +132,7 @@ public final class AdditionalSettingsScreen extends Screen {
                 });
                 button("Source: "+selected(ItemModelCache.settingsEntries()),l,y+50,
                     ()->cycle(ItemModelCache.settingsEntries()));
-                button("Target Name: Input Above",r,y+50,()->{feedback="Enter the target model name in the input field";});
+
             }
             case "Render Settings" -> {
                 List<String> models=ItemModelOverrides.settingsNames();
