@@ -37,10 +37,9 @@ public class UntitledClient implements ClientModInitializer {
         SkillHud.init();
         ItemModelCache.init();
         GhostItemPreview.init();
-        ItemModelInspector.init();
         ItemModelOverrides.init();
         ItemModelRuntime.init();
         ItemSoundInspector.init();
-        LOGGER.info("untitled client initialization finished: HUDs, commands, models and inspectors registered");
+        LOGGER.info("untitled client initialization finished: HUDs, commands and models registered");
     }
 }
