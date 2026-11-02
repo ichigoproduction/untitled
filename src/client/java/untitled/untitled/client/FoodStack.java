@@ -126,9 +126,7 @@ public final class FoodStack {
         ClientSendMessageEvents.COMMAND.register(FoodStack::onOutgoingCommand);
 
         HudRenderCallback.EVENT.register((context, tickCounter) -> renderHud(context));
-        ClientCommandRegistrationCallback.EVENT.register(
-                (dispatcher, registryAccess) -> registerCommands(dispatcher)
-        );
+
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             tickWorldChangeReset(client);
@@ -843,6 +841,27 @@ public final class FoodStack {
     ) {
     }
 
+    public static int settingsFoodSegments() { return foodSegments; }
+    public static void toggleSettingsFoodSegments() { setFoodSegments(foodSegments == 3 ? 4 : 3); }
+    public static boolean settingsFoodVertical() { return foodVerticalLayout; }
+    public static void toggleSettingsFoodLayout() {
+        foodVerticalLayout = !foodVerticalLayout; clampFoodOffsetsToScreen(); saveSettings();
+    }
+    public static String settingsColor(boolean food) { return (food ? foodColor : drinkColor).name(); }
+    public static String settingsShape(boolean food) { return (food ? foodShape : drinkShape).name(); }
+    public static void cycleSettingsColor(boolean food) {
+        HudColor[] colors = HudColor.values();
+        HudColor current = food ? foodColor : drinkColor;
+        setHudColor(food, colors[(current.ordinal() + 1) % colors.length]);
+    }
+    public static void cycleSettingsShape(boolean food) {
+        HudShape[] shapes = HudShape.values();
+        HudShape current = food ? foodShape : drinkShape;
+        setHudShape(food, shapes[(current.ordinal() + 1) % shapes.length]);
+    }
+    public static void resetSettingsStack(boolean food) {
+        if (food) resetFoodStack(); else resetDrinkStack();
+    }
     public static boolean foodSettingsEnabled() { return foodEnabled; }
     public static boolean drinkSettingsEnabled() { return drinkEnabled; }
     public static void toggleFoodSettings() { foodEnabled = !foodEnabled; saveSettings(); }
