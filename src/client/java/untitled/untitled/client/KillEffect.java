@@ -404,7 +404,7 @@ public final class KillEffect {
 
     private static void spawnCherryRose(ClientWorld world, Vec3d pos) {
         java.util.Random random = new java.util.Random();
-        for (int i = 0; i < 95; i++) {
+        for (int i = 0; i < 48; i++) {
             double a = random.nextDouble() * Math.PI * 2;
             double radius = random.nextDouble() * 1.3;
             world.addParticle(ParticleTypes.CHERRY_LEAVES,
@@ -414,8 +414,8 @@ public final class KillEffect {
         }
         world.playSound(pos.x,pos.y,pos.z, SoundEvents.BLOCK_CHERRY_LEAVES_BREAK,
             SoundCategory.PLAYERS, 1.0f, 1.4f, false);
-        world.playSound(pos.x,pos.y,pos.z, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME,
-            SoundCategory.PLAYERS, 0.65f, 1.6f, false);
+        world.playSound(pos.x,pos.y,pos.z, SoundEvents.ENTITY_PLAYER_LEVELUP,
+            SoundCategory.PLAYERS, 1.2f, 1.65f, false);
     }
 
     private static final java.util.List<HeadDrop> headDrops = new java.util.ArrayList<>();
@@ -450,8 +450,10 @@ public final class KillEffect {
         drop.setPickupDelayInfinite();
         world.addEntity(drop);
         headDrops.add(new HeadDrop(world, drop, System.currentTimeMillis() + 2400L));
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_ITEM_PICKUP,
-            SoundCategory.PLAYERS, 0.85f, 0.65f, false);
+        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
+            SoundCategory.PLAYERS, 1.2f, 0.8f, false);
+        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_WITHER_SKELETON_DEATH,
+            SoundCategory.PLAYERS, 0.9f, 1.2f, false);
     }
 
     // ===== Effects =====
