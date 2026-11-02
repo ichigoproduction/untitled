@@ -55,23 +55,6 @@ public final class SyringeCooldownHud {
         ClientTickEvents.END_CLIENT_TICK.register(SyringeCooldownHud::tickConnection);
         HudRenderCallback.EVENT.register((context, tickCounter) -> renderHud(context));
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("ss")
-                        .then(literal("toggle").executes(context -> {
-                            enabled = !enabled;
-                            EditHud.saveSettings();
-                            return 1;
-                        }))
-                        .then(literal("size")
-                                .then(argument("scale", FloatArgumentType.floatArg(MIN_SCALE, MAX_SCALE))
-                                        .executes(context -> {
-                                            scale = FloatArgumentType.getFloat(context, "scale");
-                                            clampOffsetsToScreen();
-                                            EditHud.saveSettings();
-                                            return 1;
-                                        })))
-                )
-        );
     }
 
     private static void tickConnection(MinecraftClient client) {
@@ -228,6 +211,11 @@ public final class SyringeCooldownHud {
         offsetY = bounds.y() - baseY;
     }
 
+    public static float settingsScale() { return scale; }
+    public static void setSettingsScale(float value) {
+        scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, value));
+        clampOffsetsToScreen(); EditHud.saveSettings();
+    }
     public static boolean settingsEnabled() { return enabled; }
     public static void toggleSettingsEnabled() { enabled = !enabled; EditHud.saveSettings(); }
 }
