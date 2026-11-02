@@ -11,6 +11,13 @@ public class UntitledClient implements ClientModInitializer {
     public void onInitializeClient() {
         LOGGER.info("untitled client initialization started");
         EditHud.register();
+        net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) ->
+            dispatcher.register(net.fabricmc.fabric.api.client.command.v2.ClientCommandManager.literal("152").executes(ctx -> {
+                net.minecraft.client.MinecraftClient client = net.minecraft.client.MinecraftClient.getInstance();
+                client.execute(() -> client.setScreen(new HudSettingsScreen(client.currentScreen)));
+                return 1;
+            }))
+        );
         TitleHud.init();
         Optimizer.init();
         Glow.init();
