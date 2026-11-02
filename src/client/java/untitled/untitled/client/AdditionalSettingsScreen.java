@@ -17,6 +17,7 @@ public final class AdditionalSettingsScreen extends Screen {
     private int index = 0;
     private String selectedModel = "";
     private String selectedCache = "";
+    private String selectedGhost = "";
     private String state = "normal";
 
     public AdditionalSettingsScreen(Screen parent, String page) {
@@ -40,6 +41,12 @@ public final class AdditionalSettingsScreen extends Screen {
     private void chooseCache() {
         client.setScreen(new ModelSelectionScreen(this, "Select Cached Item",
             ItemModelCache.settingsEntries(), name -> { selectedCache = name; }));
+    }
+    private void chooseGhost() {
+        java.util.List<String> options = new java.util.ArrayList<>(ItemModelOverrides.settingsNames());
+        for (String name : ItemModelCache.settingsEntries()) if (!options.contains(name)) options.add(name);
+        client.setScreen(new ModelSelectionScreen(this, "Select Ghost Item", options,
+            name -> { selectedGhost = name; }));
     }
     private void open(String p) { client.setScreen(new AdditionalSettingsScreen(this,p)); }
     private void refresh() {
@@ -99,21 +106,19 @@ public final class AdditionalSettingsScreen extends Screen {
             case "Ghost Item Preview" -> {
                 fields(y);
                 button("Create Ghost x1",l,y+25,()->{
-                    feedback=GhostItemPreview.settingsGive(first.getText(),1)?"Created":"Item not found or inventory full";
+                    feedback=GhostItemPreview.settingsGive(selectedGhost.isEmpty() ? first.getText() : selectedGhost,1)?"Created":"Item not found or inventory full";
                 });
                 button("Create Ghost x64",r,y+25,()->{
-                    feedback=GhostItemPreview.settingsGive(first.getText(),64)?"Created":"Item not found or inventory full";
+                    feedback=GhostItemPreview.settingsGive(selectedGhost.isEmpty() ? first.getText() : selectedGhost,64)?"Created":"Item not found or inventory full";
                 });
-                button("Select Model / Cache",l,y+50,this::chooseCache);
+                button("Select: "+selectedGhost,l,y+50,this::chooseGhost);
                 button("Clear Ghost Items",r,y+50,()->{GhostItemPreview.clear();feedback="Cleared";});
             }
             case "Manage Models" -> {
                 fields(y);
                 List<String> models=ItemModelOverrides.settingsNames();
                 button("Select: "+selectedModel,l,y+25,this::chooseModel);
-                button("Remove Selected",r,y+25,()->{
-                    ItemModelOverrides.settingsRemove(selectedModel);selectedModel="";refresh();
-                });
+                button("Remove Selected",r,y+25,()->{ if (!selectedModel.isEmpty()) open("Remove Model Confirmation"); });
                 button(pendingModelName == null ? "Set Model Name" : "Save Item ID",l,y+50,()->{
                     if (pendingModelName == null) {
                         if (first.getText().isBlank()) { feedback = "Enter a model name"; return; }
@@ -161,8 +166,26 @@ public final class AdditionalSettingsScreen extends Screen {
                 });
                 List<String> items=ItemModelCache.settingsEntries();
                 button("Cached: "+selectedCache,r,y,this::chooseCache);
-                button("Remove Selected Cache",l,y+25,()->{ItemModelCache.settingsRemove(selectedCache);selectedCache="";refresh();});
+                button("Remove Selected Cache",l,y+25,()->{ if (!selectedCache.isEmpty()) open("Remove Cache Confirmation"); });
                 button("Clear Cache",r,y+25,()->open("Clear Cache Confirmation"));
+            }
+            case "Remove Model Confirmation" -> {
+                button("Confirm Remove",l,y,()->{
+                    AdditionalSettingsScreen manager = (AdditionalSettingsScreen)parent;
+                    ItemModelOverrides.settingsRemove(manager.selectedModel);
+                    manager.selectedModel="";
+                    client.setScreen(parent);
+                });
+                button("Cancel",r,y,()->client.setScreen(parent));
+            }
+            case "Remove Cache Confirmation" -> {
+                button("Confirm Remove",l,y,()->{
+                    AdditionalSettingsScreen manager = (AdditionalSettingsScreen)parent;
+                    ItemModelCache.settingsRemove(manager.selectedCache);
+                    manager.selectedCache="";
+                    client.setScreen(parent);
+                });
+                button("Cancel",r,y,()->client.setScreen(parent));
             }
             case "Clear Cache Confirmation" -> {
                 button("Confirm Clear Cache",l,y,()->{ItemModelCache.settingsClear();client.setScreen(parent);});
