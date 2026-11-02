@@ -112,7 +112,7 @@ public final class KillEffect {
     private static int glitchSeq = 1;
 
     private enum EffectType {
-        THUNDER, TOTEM, SOUL, EXPLOSION, WING, POTION;
+        THUNDER, TOTEM, SOUL, EXPLOSION, WING, POTION, ROSE, FIREWORK, HEAD;
         static EffectType parse(String s) {
             if (s == null) return null;
             String q = s.trim().toLowerCase(java.util.Locale.ROOT);
@@ -146,12 +146,14 @@ public final class KillEffect {
         int entityId;
         long lastSeenMs;
         Vec3d lastPos;
+        String playerName;
 
-        Track(UUID playerUuid, int entityId, long nowMs, Vec3d pos) {
+        Track(UUID playerUuid, int entityId, long nowMs, Vec3d pos, String name) {
             this.playerUuid = playerUuid;
             this.entityId = entityId;
             this.lastSeenMs = nowMs;
             this.lastPos = pos;
+            this.playerName = name;
         }
     }
 
@@ -238,7 +240,7 @@ public final class KillEffect {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.world == null || mc.player == null) return;
         Vec3d pos = mc.player.getPos().add(mc.player.getRotationVec(1.0f).multiply(2.5));
-        trigger(effect, mc.world, pos, System.currentTimeMillis());
+        trigger(effect, mc.world, pos, System.currentTimeMillis(), mc.player.getUuid(), mc.player.getGameProfile().getName());
     }
 
     // ===== Public API =====
@@ -297,13 +299,14 @@ public final class KillEffect {
         Vec3d pos = player.getPos();
         Track t = tracks.get(uuid);
         if (t == null) {
-            tracks.put(uuid, new Track(uuid, id, now, pos));
+            tracks.put(uuid, new Track(uuid, id, now, pos, player.getGameProfile().getName()));
         } else {
             // Keep one Track per player while refreshing the latest runtime id
             // and position in case the server replaces the client-side entity.
             t.entityId = id;
             t.lastSeenMs = now;
             t.lastPos = pos;
+            t.playerName = player.getGameProfile().getName();
         }
     }
 
@@ -315,6 +318,7 @@ public final class KillEffect {
         tickGlitchBursts(world, nowMs);
         tickVoidBursts(world, nowMs);
         tickPotionDrops(world, nowMs);
+        tickFireworks(world, nowMs);
 
         if (tracks.isEmpty()) return;
 
@@ -350,15 +354,86 @@ public final class KillEffect {
                 // observations overlap, only the first transition for this UUID
                 // can produce a kill effect until the player is alive again.
                 if (enabled && tr.lastPos != null && killLockedPlayers.add(tr.playerUuid)) {
-                    trigger(effect, world, tr.lastPos, nowMs);
+                    trigger(effect, world, tr.lastPos, nowMs, tr.playerUuid, tr.playerName);
                 }
                 it.remove();
             }
         }
     }
 
+    // Client-side fireworks: rising trail followed by a randomized colored burst.
+    private static final java.util.List<FireworkBurst> fireworkBursts = new java.util.ArrayList<>();
+    private static final class FireworkBurst {
+        final Vec3d pos;
+        final long start;
+        boolean exploded;
+        FireworkBurst(Vec3d pos, long start) { this.pos = pos; this.start = start; }
+    }
+    private static void tickFireworks(ClientWorld world, long now) {
+        java.util.Iterator<FireworkBurst> it = fireworkBursts.iterator();
+        while (it.hasNext()) {
+            FireworkBurst rocket = it.next();
+            long age = now - rocket.start;
+            if (age < 0) { it.remove(); continue; }
+            double progress = Math.min(1.0, age / 550.0);
+            Vec3d p = rocket.pos.add(0, 0.7 + progress * 3.1, 0);
+            if (age < 550) {
+                world.addParticle(ParticleTypes.FIREWORK, p.x, p.y, p.z, 0, -0.025, 0);
+            } else if (!rocket.exploded) {
+                rocket.exploded = true;
+                java.util.Random random = new java.util.Random();
+                int[] palette = {0xFF4466, 0xFFDD44, 0x44CCFF, 0x88FF66, 0xCC77FF, 0xFF88DD};
+                int rgb = palette[random.nextInt(palette.length)];
+                DustParticleEffect dust = new DustParticleEffect(rgb, 1.25f);
+                for (int i = 0; i < 85; i++) {
+                    double angle = random.nextDouble() * Math.PI * 2;
+                    double z = random.nextDouble() * 2 - 1;
+                    double spread = Math.sqrt(1 - z * z);
+                    double speed = 0.12 + random.nextDouble() * 0.28;
+                    world.addParticle(i % 5 == 0 ? ParticleTypes.FIREWORK : dust,
+                        p.x, p.y, p.z, Math.cos(angle)*spread*speed, z*speed,
+                        Math.sin(angle)*spread*speed);
+                }
+                world.playSound(p.x,p.y,p.z, SoundEvents.ENTITY_FIREWORK_ROCKET_BLAST,
+                    SoundCategory.PLAYERS, 0.9f, 1.05f, false);
+            }
+            if (age > 850) it.remove();
+        }
+    }
+
+    private static void spawnCherryRose(ClientWorld world, Vec3d pos) {
+        java.util.Random random = new java.util.Random();
+        for (int i = 0; i < 95; i++) {
+            double a = random.nextDouble() * Math.PI * 2;
+            double radius = random.nextDouble() * 1.3;
+            world.addParticle(ParticleTypes.CHERRY_LEAVES,
+                pos.x + Math.cos(a)*radius, pos.y + 0.8 + random.nextDouble()*2.6,
+                pos.z + Math.sin(a)*radius, -Math.sin(a)*0.025,
+                -0.035-random.nextDouble()*0.055, Math.cos(a)*0.025);
+        }
+        world.playSound(pos.x,pos.y,pos.z, SoundEvents.BLOCK_CHERRY_LEAVES_BREAK,
+            SoundCategory.PLAYERS, 1.0f, 1.4f, false);
+        world.playSound(pos.x,pos.y,pos.z, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME,
+            SoundCategory.PLAYERS, 0.65f, 1.6f, false);
+    }
+
+    private static void spawnHead(ClientWorld world, Vec3d pos, UUID uuid, String name) {
+        ItemStack head = new ItemStack(Items.PLAYER_HEAD);
+        // Head effect is visual only: no server loot or inventory changes.
+        for (int i = 0; i < 32; i++) {
+            double angle = Math.random() * Math.PI * 2;
+            world.addParticle(new net.minecraft.particle.ItemStackParticleEffect(ParticleTypes.ITEM, head),
+                pos.x + Math.cos(angle)*0.16,
+                pos.y + 1.5 + Math.random()*0.25,
+                pos.z + Math.sin(angle)*0.16,
+                Math.cos(angle)*0.035, -0.06-Math.random()*0.10, Math.sin(angle)*0.035);
+        }
+        world.playSound(pos.x,pos.y,pos.z, SoundEvents.ENTITY_ITEM_PICKUP,
+            SoundCategory.PLAYERS, 0.85f, 0.65f, false);
+    }
+
     // ===== Effects =====
-    private static void trigger(EffectType type, ClientWorld world, Vec3d pos, long nowMs) {
+    private static void trigger(EffectType type, ClientWorld world, Vec3d pos, long nowMs, UUID playerId, String playerName) {
         if (type == null) return;
 
         if (type == EffectType.THUNDER) spawnThunder(world, pos);
@@ -367,6 +442,9 @@ public final class KillEffect {
         else if (type == EffectType.POTION) spawnPotionDrop(world, pos, nowMs);
         else if (type == EffectType.SOUL) spawnSoul(world, pos, nowMs);
         else if (type == EffectType.EXPLOSION) spawnTnt(world, pos);
+        else if (type == EffectType.ROSE) spawnCherryRose(world, pos);
+        else if (type == EffectType.FIREWORK) fireworkBursts.add(new FireworkBurst(pos, nowMs));
+        else if (type == EffectType.HEAD) spawnHead(world, pos, playerId, playerName);
     }
 
     private static void spawnEnder(ClientWorld world, Vec3d pos) {
