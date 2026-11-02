@@ -31,7 +31,9 @@ public final class EditHud extends Screen {
         FOOD,
         DRINK,
         SYRINGE,
-        SKILL
+        SKILL,
+        TITLE,
+        SUBTITLE
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -94,12 +96,15 @@ public final class EditHud extends Screen {
         FoodStack.renderDrinkEditorPreview(context);
         SyringeCooldownHud.renderEditorPreview(context);
         SkillHud.renderEditorPreview(context);
+        TitleHud.renderEditorPreview(context);
 
         HudBounds partyBounds = PartyHud.getEditorBounds();
         HudBounds foodBounds = FoodStack.getFoodEditorBounds();
         HudBounds drinkBounds = FoodStack.getDrinkEditorBounds();
         HudBounds syringeBounds = SyringeCooldownHud.getEditorBounds();
         HudBounds skillBounds = SkillHud.getEditorBounds();
+        HudBounds titleBounds = TitleHud.getTitleEditorBounds();
+        HudBounds subtitleBounds = TitleHud.getSubtitleEditorBounds();
 
         drawSelectionBox(
                 context,
@@ -127,6 +132,8 @@ public final class EditHud extends Screen {
                 dragTarget == DragTarget.SKILL || skillBounds.contains(mouseX, mouseY)
         );
 
+        drawSelectionBox(context, titleBounds, dragTarget == DragTarget.TITLE || titleBounds.contains(mouseX, mouseY));
+        drawSelectionBox(context, subtitleBounds, dragTarget == DragTarget.SUBTITLE || subtitleBounds.contains(mouseX, mouseY));
         super.render(context, mouseX, mouseY, delta);
     }
 
@@ -159,6 +166,14 @@ public final class EditHud extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
+            if (TitleHud.getSubtitleEditorBounds().contains(mouseX, mouseY)) {
+                startDragging(DragTarget.SUBTITLE, mouseX, mouseY);
+                return true;
+            }
+            if (TitleHud.getTitleEditorBounds().contains(mouseX, mouseY)) {
+                startDragging(DragTarget.TITLE, mouseX, mouseY);
+                return true;
+            }
             if (SkillHud.getEditorBounds().contains(mouseX, mouseY)) {
                 startDragging(DragTarget.SKILL, mouseX, mouseY);
                 return true;
@@ -212,6 +227,10 @@ public final class EditHud extends Screen {
                 SyringeCooldownHud.moveBy(moveX, moveY);
             } else if (dragTarget == DragTarget.SKILL) {
                 SkillHud.moveBy(moveX, moveY);
+            } else if (dragTarget == DragTarget.TITLE) {
+                TitleHud.moveBy(true, moveX, moveY);
+            } else if (dragTarget == DragTarget.SUBTITLE) {
+                TitleHud.moveBy(false, moveX, moveY);
             }
             return true;
         }
@@ -340,6 +359,7 @@ public final class EditHud extends Screen {
         FoodStack.resetPositions();
         SyringeCooldownHud.resetPosition();
         SkillHud.resetPosition();
+        TitleHud.resetSettingsPositions();
         saveSettings();
     }
 
