@@ -8,7 +8,7 @@ import java.util.List;
 
 /** English vanilla-style HUD configuration, also opened by /152. */
 public final class HudSettingsScreen extends Screen {
-    private static final String[] NAMES = {"HUD Position", "Skill HUD", "Food HUD", "Drink HUD", "Syringe HUD", "Title HUD"};
+    private static final String[] NAMES = {"HUD Position", "Food HUD", "Drink HUD", "Syringe HUD", "Skill HUD", "Title HUD"};
     private static final int W = 150, H = 20, GAP = 10;
     private final Screen parent;
     private final int category;
@@ -28,7 +28,7 @@ public final class HudSettingsScreen extends Screen {
         if (category < 0) {
             for (int i = 0; i < NAMES.length; i++) {
                 final int target = i;
-                addButton(NAMES[i], left + (i % 2) * (W + GAP), 48 + (i / 2) * 25,
+                addButton(NAMES[i], left, 48 + i * 25,
                     () -> client.setScreen(new HudSettingsScreen(parent, target)));
             }
         } else {
@@ -46,18 +46,42 @@ public final class HudSettingsScreen extends Screen {
         int y = 48;
         switch (category) {
             case 0 -> {
-                addButton("Edit Positions", left, y, () -> {
+                addButton("Edit All Positions", left, y, () -> {
                     client.setScreen(null); EditHud.openSettingsEditor();
                 });
-                addButton("Reset Positions", left + W + GAP, y, EditHud::resetSettingsPositions);
+                addButton("Reset All Positions", left + W + GAP, y, EditHud::resetSettingsPositions);
             }
             case 1 -> {
+                addButton("Enabled: " + on(FoodStack.foodSettingsEnabled()), left, y, () -> { FoodStack.toggleFoodSettings(); refresh(); });
+                addButton("Stacks: " + FoodStack.settingsFoodSegments(), left + W + GAP, y, () -> { FoodStack.toggleSettingsFoodSegments(); refresh(); });
+                addButton("Layout: " + (FoodStack.settingsFoodVertical() ? "Vertical" : "Horizontal"), left, y+25,
+                    () -> { FoodStack.toggleSettingsFoodLayout(); refresh(); });
+                addButton("Color: " + FoodStack.settingsColor(true), left + W + GAP, y+25,
+                    () -> { FoodStack.cycleSettingsColor(true); refresh(); });
+                addButton("Shape: " + FoodStack.settingsShape(true), left, y+50,
+                    () -> { FoodStack.cycleSettingsShape(true); refresh(); });
+                addButton("Reset Stack", left + W + GAP, y+50, () -> { FoodStack.resetSettingsStack(true); refresh(); });
+            }
+            case 2 -> {
+                addButton("Enabled: " + on(FoodStack.drinkSettingsEnabled()), left, y, () -> { FoodStack.toggleDrinkSettings(); refresh(); });
+                addButton("Color: " + FoodStack.settingsColor(false), left + W + GAP, y,
+                    () -> { FoodStack.cycleSettingsColor(false); refresh(); });
+                addButton("Shape: " + FoodStack.settingsShape(false), left, y+25,
+                    () -> { FoodStack.cycleSettingsShape(false); refresh(); });
+                addButton("Reset Stack", left + W + GAP, y+25, () -> { FoodStack.resetSettingsStack(false); refresh(); });
+            }
+            case 3 -> {
+                addButton("Enabled: " + on(SyringeCooldownHud.settingsEnabled()), left, y,
+                    () -> { SyringeCooldownHud.toggleSettingsEnabled(); refresh(); });
+                addButton("Size: " + percent(SyringeCooldownHud.settingsScale()), left + W + GAP, y,
+                    () -> { SyringeCooldownHud.setSettingsScale(nextScale(SyringeCooldownHud.settingsScale())); refresh(); });
+            }
+            case 4 -> {
                 addButton("Enabled: " + on(SkillHud.settingsEnabled()), left, y, () -> { SkillHud.toggleSettingsEnabled(); refresh(); });
                 addButton("Size: " + percent(SkillHud.settingsScale()), left + W + GAP, y, () -> {
                     SkillHud.setSettingsScale(nextScale(SkillHud.settingsScale())); refresh();
                 });
-                addButton("Edit Positions", left, y + 25, () -> { client.setScreen(null); EditHud.openSettingsEditor(); });
-                addButton("Reset Skill Filters", left + W + GAP, y + 25, () -> { SkillHud.resetSettingsSkills(); refresh(); });
+                addButton("Reset Skill Filters", left, y + 25, () -> { SkillHud.resetSettingsSkills(); refresh(); });
                 List<String> skills = SkillHud.settingsSkills();
                 int perPage = Math.max(2, ((height - 154) / 25) * 2);
                 int pages = Math.max(1, (skills.size() + perPage - 1) / perPage);
@@ -73,34 +97,6 @@ public final class HudSettingsScreen extends Screen {
                 addButton("Skills Page " + (skillPage + 1) + "/" + pages, left, height - 53,
                     () -> { skillPage = (skillPage + 1) % pages; refresh(); });
             }
-            case 2 -> {
-                addButton("Enabled: " + on(FoodStack.foodSettingsEnabled()), left, y, () -> { FoodStack.toggleFoodSettings(); refresh(); });
-                addButton("Stacks: " + FoodStack.settingsFoodSegments(), left + W + GAP, y, () -> { FoodStack.toggleSettingsFoodSegments(); refresh(); });
-                addButton("Layout: " + (FoodStack.settingsFoodVertical() ? "Vertical" : "Horizontal"), left, y+25,
-                    () -> { FoodStack.toggleSettingsFoodLayout(); refresh(); });
-                addButton("Color: " + FoodStack.settingsColor(true), left + W + GAP, y+25,
-                    () -> { FoodStack.cycleSettingsColor(true); refresh(); });
-                addButton("Shape: " + FoodStack.settingsShape(true), left, y+50,
-                    () -> { FoodStack.cycleSettingsShape(true); refresh(); });
-                addButton("Reset Stack", left + W + GAP, y+50, () -> { FoodStack.resetSettingsStack(true); refresh(); });
-                editButton(left, y+75);
-            }
-            case 3 -> {
-                addButton("Enabled: " + on(FoodStack.drinkSettingsEnabled()), left, y, () -> { FoodStack.toggleDrinkSettings(); refresh(); });
-                addButton("Color: " + FoodStack.settingsColor(false), left + W + GAP, y,
-                    () -> { FoodStack.cycleSettingsColor(false); refresh(); });
-                addButton("Shape: " + FoodStack.settingsShape(false), left, y+25,
-                    () -> { FoodStack.cycleSettingsShape(false); refresh(); });
-                addButton("Reset Stack", left + W + GAP, y+25, () -> { FoodStack.resetSettingsStack(false); refresh(); });
-                editButton(left, y+50);
-            }
-            case 4 -> {
-                addButton("Enabled: " + on(SyringeCooldownHud.settingsEnabled()), left, y,
-                    () -> { SyringeCooldownHud.toggleSettingsEnabled(); refresh(); });
-                addButton("Size: " + percent(SyringeCooldownHud.settingsScale()), left + W + GAP, y,
-                    () -> { SyringeCooldownHud.setSettingsScale(nextScale(SyringeCooldownHud.settingsScale())); refresh(); });
-                editButton(left, y+25);
-            }
             case 5 -> {
                 addButton("Title: " + on(TitleHud.settingsTitleVisible()), left, y,
                     () -> { TitleHud.toggleSettingsTitle(); refresh(); });
@@ -110,18 +106,11 @@ public final class HudSettingsScreen extends Screen {
                     () -> { TitleHud.setSettingsTitleSize(nextScale(TitleHud.settingsTitleSize())); refresh(); });
                 addButton("Subtitle Size: " + percent(TitleHud.settingsSubtitleSize()), left + W + GAP, y+25,
                     () -> { TitleHud.setSettingsSubtitleSize(nextScale(TitleHud.settingsSubtitleSize())); refresh(); });
-                addButton("Edit Positions", left, y+50,
-                    () -> { client.setScreen(null); TitleHud.openSettingsEditor(); });
-                addButton("Reset Positions", left + W + GAP, y+50,
-                    () -> { TitleHud.resetSettingsPositions(); refresh(); });
             }
             default -> {}
         }
     }
 
-    private void editButton(int x, int y) {
-        addButton("Edit Positions", x, y, () -> { client.setScreen(null); EditHud.openSettingsEditor(); });
-    }
     private void refresh() { clearAndInit(); }
     private static String on(boolean enabled) { return enabled ? "ON" : "OFF"; }
     private static String percent(float scale) { return Math.round(scale * 100) + "%"; }
