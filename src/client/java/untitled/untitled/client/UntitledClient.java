@@ -30,6 +30,7 @@ public class UntitledClient implements ClientModInitializer {
         TitleHud.init();
         Optimizer.init();
         Glow.init();
+        KillEffect.register();
         SkinChanger.init();
         PartyHud.init();
         FoodStack.init();
