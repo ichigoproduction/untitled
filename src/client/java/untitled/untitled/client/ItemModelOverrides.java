@@ -359,6 +359,85 @@ public final class ItemModelOverrides {
                         )));
     }
 
+    public static boolean settingsEnabled() { return enabled; }
+    public static void toggleSettingsEnabled() {
+        enabled = !enabled; ItemModelRuntime.reset(); saveSettings();
+    }
+    public static java.util.List<String> settingsNames() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (Map.Entry<String, ModelRule> entry : RULES.entries()) names.add(entry.getKey());
+        return names;
+    }
+    public static java.util.List<String> settingsScopes() {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        for (RenderScope scope : RenderScope.values()) names.add(scope.commandName());
+        return names;
+    }
+    public static boolean settingsScopeEnabled(String name, String scopeName) {
+        ModelRule rule = RULES.get(name);
+        if (rule == null) return false;
+        for (RenderScope scope : RenderScope.values())
+            if (scope.commandName().equals(scopeName)) return rule.scopes().enabled(scope);
+        return false;
+    }
+    public static boolean toggleSettingsScope(String name, String scopeName) {
+        ModelRule rule = RULES.get(name);
+        if (rule == null) return false;
+        for (RenderScope scope : RenderScope.values()) {
+            if (!scope.commandName().equals(scopeName)) continue;
+            RULES.put(name, new ModelRule(rule.kind(), rule.payload(), rule.drawnPayload(),
+                rule.description(), rule.scopes().toggle(scope)));
+            invalidateRuleCache(name); ItemModelRuntime.reset(); saveSettings(); return true;
+        }
+        return false;
+    }
+    public static boolean settingsMapVanilla(String name, String rawId) {
+        Identifier id = Identifier.tryParse(rawId);
+        if (name == null || name.isBlank() || id == null ||
+            !"minecraft".equals(id.getNamespace()) || !Registries.ITEM.containsId(id)) return false;
+        RULES.put(name, new ModelRule(RuleKind.VANILLA_ITEM, id.toString(), null, id.toString(),
+            scopesForExistingRule(name)));
+        invalidateRuleCache(name); ItemModelRuntime.reset(); saveSettings(); return true;
+    }
+    public static boolean settingsCopyHeld(String name) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || client.world == null || name == null || name.isBlank()) return false;
+        ItemStack held = client.player.getMainHandStack();
+        if (held.isEmpty()) held = client.player.getOffHandStack();
+        if (held.isEmpty()) return false;
+        try {
+            ItemStack snapshot = held.copyWithCount(1);
+            String payload = snapshot.toNbt(client.world.getRegistryManager()).toString();
+            RULES.put(name, new ModelRule(RuleKind.COPIED_STACK, payload, null,
+                "copy:" + Registries.ITEM.getId(snapshot.getItem()), scopesForExistingRule(name)));
+            invalidateRuleCache(name); ItemModelRuntime.reset(); saveSettings(); return true;
+        } catch (Exception e) { return false; }
+    }
+    public static boolean settingsCopyCache(String source, String target, String state) {
+        ItemModelCache.CachedItem cached = ItemModelCache.find(source);
+        if (cached == null || target == null || target.isBlank()) return false;
+        ModelRule old = RULES.get(target);
+        ScopeSettings scopes = scopesForExistingRule(target);
+        String description = "cache:" + source + " (" + cached.itemId() + ")";
+        if ("drawn".equals(state)) {
+            if (old == null || old.kind() != RuleKind.COPIED_STACK) return false;
+            RULES.put(target, new ModelRule(RuleKind.COPIED_STACK, old.payload(),
+                cached.payload(), old.description(), scopes));
+        } else {
+            RULES.put(target, new ModelRule(RuleKind.COPIED_STACK, cached.payload(),
+                "sheathed".equals(state) && old != null && old.kind() == RuleKind.COPIED_STACK
+                    ? old.drawnPayload() : null, description, scopes));
+        }
+        invalidateRuleCache(target); ItemModelRuntime.reset(); saveSettings(); return true;
+    }
+    public static boolean settingsRemove(String name) {
+        if (!RULES.remove(name)) return false;
+        invalidateRuleCache(name); ItemModelRuntime.reset(); saveSettings(); return true;
+    }
+    public static void settingsClear() {
+        RULES.clear(); DECODED_COPY_STACKS.clear(); ItemModelRuntime.reset(); saveSettings();
+    }
+
     private static int toggleEnabled(FabricClientCommandSource source) {
         enabled = !enabled;
         ItemModelRuntime.reset();
