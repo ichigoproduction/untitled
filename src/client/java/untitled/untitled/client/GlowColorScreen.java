@@ -15,6 +15,15 @@ public final class GlowColorScreen extends Screen {
         "white", "black", "red", "green", "blue", "yellow", "aqua",
         "cyan", "pink", "purple", "orange", "lime", "gray", "lightgray"
     );
+    private static final java.util.Map<String, Integer> RGB = java.util.Map.ofEntries(
+        java.util.Map.entry("white", 0xFFFFFF), java.util.Map.entry("black", 0x000000),
+        java.util.Map.entry("red", 0xFF5555), java.util.Map.entry("green", 0x55FF55),
+        java.util.Map.entry("blue", 0x5555FF), java.util.Map.entry("yellow", 0xFFFF55),
+        java.util.Map.entry("aqua", 0x55FFFF), java.util.Map.entry("cyan", 0x00FFFF),
+        java.util.Map.entry("pink", 0xFF77AA), java.util.Map.entry("purple", 0xAA55FF),
+        java.util.Map.entry("orange", 0xFFAA00), java.util.Map.entry("lime", 0x39FF14),
+        java.util.Map.entry("gray", 0x888888), java.util.Map.entry("lightgray", 0xBBBBBB)
+    );
     private final Screen parent;
     private final Predicate<String> apply;
     private final String heading;
@@ -63,7 +72,7 @@ public final class GlowColorScreen extends Screen {
             final String chosen = name;
             int x = width / 2 - 155 + (row % 2) * 160;
             int y = 70 + (row / 2) * 24;
-            addDrawableChild(ButtonWidget.builder(Text.literal(name), button -> submit(chosen))
+            addDrawableChild(ButtonWidget.builder(Text.literal("■ " + name).styled(style -> style.withColor(RGB.get(name))), button -> submit(chosen))
                     .dimensions(x, y, 150, 20).build());
             row++;
         }
@@ -77,6 +86,20 @@ public final class GlowColorScreen extends Screen {
         // Rebuild only this screen's widget collection; preserve text field and its focus.
         clearChildren();
         if (input != null) addDrawableChild(input);
+    }
+
+    @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_TAB && input != null && input.isFocused()) {
+            String prefix = input.getText().trim().toLowerCase(Locale.ROOT);
+            for (String name : COLORS) {
+                if (!prefix.isEmpty() && name.startsWith(prefix)) {
+                    input.setText(name);
+                    input.setCursorToEnd(false);
+                    return true;
+                }
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override public void render(DrawContext context, int mouseX, int mouseY, float delta) {
