@@ -68,23 +68,6 @@ public final class EditHud extends Screen {
 
         loadSettings();
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
-                dispatcher.register(literal("hud")
-                        .executes(context -> {
-                            openEditorDelayTicks = 2;
-                            return 1;
-                        })
-                        .then(literal("reset").executes(context -> {
-                            PartyHud.resetPosition();
-                            FoodStack.resetPositions();
-                            SyringeCooldownHud.resetPosition();
-                            SkillHud.resetPosition();
-                            saveSettings();
-                            return 1;
-                        }))
-                )
-        );
-
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (openEditorDelayTicks < 0) {
                 return;
@@ -350,6 +333,14 @@ public final class EditHud extends Screen {
                 }
             }
         }
+    }
+
+    public static void resetSettingsPositions() {
+        PartyHud.resetPosition();
+        FoodStack.resetPositions();
+        SyringeCooldownHud.resetPosition();
+        SkillHud.resetPosition();
+        saveSettings();
     }
 
     public static void openSettingsEditor() {
