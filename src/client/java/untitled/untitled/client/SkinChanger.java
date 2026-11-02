@@ -300,6 +300,27 @@ public class SkinChanger {
         });
     }
 
+    public static void settingsApplySkin(String name) {
+        if (name == null || name.isBlank()) return;
+        persistSkin(name.trim(), true);
+        silentApplySkin(MinecraftClient.getInstance(), name.trim());
+    }
+    public static void settingsResetSkin() {
+        clearOverride();
+        persistSkin(null, false);
+    }
+    public static void settingsApplyCape(String name) {
+        if (name == null || !BUILTIN_CAPES.containsKey(normalizeCapeKey(name))) return;
+        persistCape(normalizeCapeKey(name), true);
+        silentApplyCape(MinecraftClient.getInstance(), name);
+    }
+    public static void settingsResetCape() {
+        clearCapeOverride();
+        persistCape(null, false);
+    }
+    public static java.util.List<String> settingsCapeNames() {
+        return new java.util.ArrayList<>(BUILTIN_CAPES.keySet());
+    }
     private static void register(CommandDispatcher<FabricClientCommandSource> dispatcher) {
         dispatcher.register(
                 literal("skin")
