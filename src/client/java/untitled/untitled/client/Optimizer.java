@@ -44,6 +44,10 @@ public final class Optimizer {
         );
     }
 
+    public static void toggleSettingsEnabled() {
+        enabled = !enabled;
+        saveSettings();
+    }
     public static boolean isEnabled() {
         return enabled;
     }
