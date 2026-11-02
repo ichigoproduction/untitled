@@ -140,6 +140,14 @@ public final class AdditionalSettingsScreen extends Screen {
                 });
                 button("Reset Cape",l,y+25,()->{SkinChanger.settingsResetCape();feedback="Cape reset";});
             }
+            case "Kill Effect" -> {
+                button("Enabled: " + (KillEffect.settingsEnabled() ? "ON" : "OFF"), l, y,
+                    () -> { KillEffect.toggleSettingsEnabled(); refresh(); });
+                button("Effect: " + KillEffect.settingsEffect(), r, y,
+                    () -> client.setScreen(new ModelSelectionScreen(this, "Select Kill Effect",
+                        KillEffect.settingsEffects(), KillEffect::setSettingsEffect)));
+                button("Preview Effect", l, y + 25, KillEffect::previewSettings);
+            }
             case "Optimizer" -> {
                 button("Enabled: "+(Optimizer.isEnabled()?"ON":"OFF"),l,y,()->{
                     Optimizer.toggleSettingsEnabled();refresh();
