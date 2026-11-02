@@ -330,4 +330,8 @@ public final class EditHud extends Screen {
             }
         }
     }
+
+    public static void openSettingsEditor() {
+        openEditorDelayTicks = 2;
+    }
 }
