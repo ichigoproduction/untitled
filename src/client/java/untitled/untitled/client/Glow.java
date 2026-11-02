@@ -49,6 +49,7 @@ public final class Glow {
     // Defaults to true to preserve behavior of existing 152_glow.json files.
     private static boolean selfEnabled = true;
     private static int selfColor = DEFAULT_COLOR;
+    private static boolean throughWalls = false;
 
     private record Target(String name, int color) {}
 
@@ -216,6 +217,50 @@ public final class Glow {
         return null;
     }
 
+    public static boolean settingsEnabled() { return enabled; }
+    public static boolean settingsSelfEnabled() { return selfEnabled; }
+    public static boolean settingsThroughWalls() { return throughWalls; }
+    public static void toggleSettingsEnabled() { enabled = !enabled; save(); }
+    public static void toggleSettingsSelf() { selfEnabled = !selfEnabled; save(); }
+    public static void toggleSettingsThroughWalls() { throughWalls = !throughWalls; save(); }
+    public static java.util.List<String> settingsPlayers() {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (Target target : targets.values()) list.add(target.name());
+        return list;
+    }
+    public static boolean settingsSetColor(String input) {
+        Integer rgb = parseColor(input);
+        if (rgb == null) return false;
+        selfColor = rgb; save(); return true;
+    }
+    public static boolean settingsAddPlayer(String name, String color) {
+        Integer rgb = parseColor(color);
+        UUID uuid = resolveUuid(name);
+        if (uuid == null || rgb == null) return false;
+        targets.put(uuid, new Target(name, rgb)); save(); return true;
+    }
+    public static void settingsRemovePlayer(String name) {
+        UUID uuid = resolveUuid(name);
+        if (uuid != null && targets.remove(uuid) != null) save();
+    }
+    public static void settingsClearPlayers() { targets.clear(); save(); }
+
+    /** Approximate occlusion test for custom outlines; vanilla/server glow is preserved. */
+    private static boolean visibleToCamera(Entity entity) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client.world == null || client.getCameraEntity() == null) return true;
+        net.minecraft.util.math.Vec3d start = client.getCameraEntity().getEyePos();
+        net.minecraft.util.math.Vec3d center = entity.getBoundingBox().getCenter();
+        net.minecraft.util.math.Vec3d eye = entity.getEyePos();
+        for (net.minecraft.util.math.Vec3d end : new net.minecraft.util.math.Vec3d[]{center, eye}) {
+            var hit = client.world.raycast(new net.minecraft.world.RaycastContext(
+                start, end, net.minecraft.world.RaycastContext.ShapeType.COLLIDER,
+                net.minecraft.world.RaycastContext.FluidHandling.NONE, client.getCameraEntity()));
+            if (hit.getType() == net.minecraft.util.hit.HitResult.Type.MISS) return true;
+        }
+        return false;
+    }
+
     /** A vanilla glowing outline is preserved when the mod is disabled. */
     public static boolean shouldOutline(Entity entity) {
         return colorFor(entity) != null;
@@ -233,6 +278,7 @@ public final class Glow {
             return null;
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.player == null) return null;
+        if (!throughWalls && !visibleToCamera(entity)) return null;
         if (player.getUuid().equals(client.player.getUuid())) {
             return enabled && selfEnabled ? selfColor : null;
         }
@@ -353,6 +399,7 @@ public final class Glow {
         try (Reader reader = Files.newBufferedReader(CONFIG)) {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             if (root.has("enabled")) enabled = root.get("enabled").getAsBoolean();
+            if (root.has("throughWalls")) throughWalls = root.get("throughWalls").getAsBoolean();
             if (root.has("selfEnabled")) selfEnabled = root.get("selfEnabled").getAsBoolean();
             if (root.has("selfColor")) {
                 Integer rgb = parseColor(root.get("selfColor").getAsString());
@@ -383,6 +430,7 @@ public final class Glow {
             Files.createDirectories(CONFIG.getParent());
             JsonObject root = new JsonObject();
             root.addProperty("enabled", enabled);
+            root.addProperty("throughWalls", throughWalls);
             root.addProperty("selfEnabled", selfEnabled);
             root.addProperty("selfColor", hex(selfColor));
             JsonObject players = new JsonObject();
