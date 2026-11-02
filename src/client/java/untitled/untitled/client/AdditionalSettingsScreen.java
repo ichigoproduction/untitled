@@ -15,6 +15,8 @@ public final class AdditionalSettingsScreen extends Screen {
     private String pendingModelName = null;
     private String feedback = "";
     private int index = 0;
+    private String selectedModel = "";
+    private String selectedCache = "";
     private String state = "normal";
 
     public AdditionalSettingsScreen(Screen parent, String page) {
@@ -30,6 +32,14 @@ public final class AdditionalSettingsScreen extends Screen {
         first = new TextFieldWidget(textRenderer, width / 2 - 155, y, 310, 20, Text.literal("Input"));
         first.setMaxLength(128);
         addDrawableChild(first);
+    }
+    private void chooseModel() {
+        client.setScreen(new ModelSelectionScreen(this, "Select Model",
+            ItemModelOverrides.settingsNames(), name -> { selectedModel = name; }));
+    }
+    private void chooseCache() {
+        client.setScreen(new ModelSelectionScreen(this, "Select Cached Item",
+            ItemModelCache.settingsEntries(), name -> { selectedCache = name; }));
     }
     private void open(String p) { client.setScreen(new AdditionalSettingsScreen(this,p)); }
     private void refresh() {
@@ -94,14 +104,15 @@ public final class AdditionalSettingsScreen extends Screen {
                 button("Create Ghost x64",r,y+25,()->{
                     feedback=GhostItemPreview.settingsGive(first.getText(),64)?"Created":"Item not found or inventory full";
                 });
-                button("Clear Ghost Items",l,y+50,()->{GhostItemPreview.clear();feedback="Cleared";});
+                button("Select Model / Cache",l,y+50,this::chooseCache);
+                button("Clear Ghost Items",r,y+50,()->{GhostItemPreview.clear();feedback="Cleared";});
             }
             case "Manage Models" -> {
                 fields(y);
                 List<String> models=ItemModelOverrides.settingsNames();
-                button("Selected: "+selected(models),l,y+25,()->cycle(models));
+                button("Select: "+selectedModel,l,y+25,this::chooseModel);
                 button("Remove Selected",r,y+25,()->{
-                    ItemModelOverrides.settingsRemove(selected(models));refresh();
+                    ItemModelOverrides.settingsRemove(selectedModel);selectedModel="";refresh();
                 });
                 button(pendingModelName == null ? "Set Model Name" : "Save Item ID",l,y+50,()->{
                     if (pendingModelName == null) {
@@ -128,16 +139,15 @@ public final class AdditionalSettingsScreen extends Screen {
                     state=state.equals("normal")?"sheathed":state.equals("sheathed")?"drawn":"normal";refresh();
                 });
                 button("Copy Cache to Target",r,y+25,()->{
-                    feedback=ItemModelOverrides.settingsCopyCache(selected(ItemModelCache.settingsEntries()),first.getText(),state)?"Saved":"Select a cached source and enter a target";
+                    feedback=ItemModelOverrides.settingsCopyCache(selectedCache,first.getText(),state)?"Saved":"Select a cached source and enter a target";
                 });
-                button("Source: "+selected(ItemModelCache.settingsEntries()),l,y+50,
-                    ()->cycle(ItemModelCache.settingsEntries()));
+                button("Source: "+selectedCache,l,y+50,this::chooseCache);
 
             }
             case "Render Settings" -> {
                 List<String> models=ItemModelOverrides.settingsNames();
-                String name=selected(models);
-                button("Model: "+name,l,y,()->cycle(models));
+                String name=selectedModel;
+                button("Model: "+name,l,y,this::chooseModel);
                 List<String> scopes=ItemModelOverrides.settingsScopes();
                 for(int i=0;i<scopes.size();i++){
                     String scope=scopes.get(i);
@@ -150,8 +160,8 @@ public final class AdditionalSettingsScreen extends Screen {
                     ItemModelCache.toggleSettingsAutoCache();refresh();
                 });
                 List<String> items=ItemModelCache.settingsEntries();
-                button("Cached: "+selected(items),r,y,()->cycle(items));
-                button("Remove Selected Cache",l,y+25,()->{ItemModelCache.settingsRemove(selected(items));refresh();});
+                button("Cached: "+selectedCache,r,y,this::chooseCache);
+                button("Remove Selected Cache",l,y+25,()->{ItemModelCache.settingsRemove(selectedCache);selectedCache="";refresh();});
                 button("Clear Cache",r,y+25,()->open("Clear Cache Confirmation"));
             }
             case "Clear Cache Confirmation" -> {
