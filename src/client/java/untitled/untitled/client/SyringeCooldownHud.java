@@ -227,4 +227,7 @@ public final class SyringeCooldownHud {
         offsetX = bounds.x() - baseX;
         offsetY = bounds.y() - baseY;
     }
+
+    public static boolean settingsEnabled() { return enabled; }
+    public static void toggleSettingsEnabled() { enabled = !enabled; EditHud.saveSettings(); }
 }
