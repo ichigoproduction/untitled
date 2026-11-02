@@ -178,71 +178,7 @@ public final class ItemModelOverrides {
         initialized = true;
 
         loadSettings();
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(
-                    literal("imodel")
-                            .then(GhostItemPreview.command())
-                            .then(literal("toggle")
-                                    .executes(context -> toggleEnabled(context.getSource())))
-                            .then(literal("scope")
-                                    .then(argument("target", UnicodeStringArgumentType.string())
-                                            .suggests((context, builder) -> suggestRuleNames(builder))
-                                            .then(scopeToggleNode(RenderScope.FIRST_RIGHT))
-                                            .then(scopeToggleNode(RenderScope.FIRST_LEFT))
-                                            .then(scopeToggleNode(RenderScope.THIRD_RIGHT))
-                                            .then(scopeToggleNode(RenderScope.THIRD_LEFT))
-                                            .then(scopeToggleNode(RenderScope.GUI))
-                                            .then(scopeToggleNode(RenderScope.EQUIPMENT))
-                                            .then(literal("all")
-                                                    .then(literal("toggle")
-                                                            .executes(context -> toggleAllScopes(
-                                                                    context.getSource(),
-                                                                    StringArgumentType.getString(
-                                                                            context,
-                                                                            "target"
-                                                                    )
-                                                            ))))))
-                            .then(literal("remove")
-                                    .then(argument("name", StringArgumentType.greedyString())
-                                            .executes(context -> removeRule(
-                                                    context.getSource(),
-                                                    ModelCommandParser.normalizeNameArgument(
-                                                            StringArgumentType.getString(context, "name")
-                                                    )
-                                            ))))
-                            .then(literal("clear")
-                                    .executes(context -> clearRules(context.getSource())))
-                            .then(literal("list")
-                                    .executes(context -> listRules(context.getSource())))
-                            .then(argument("mapping", StringArgumentType.greedyString())
-                                    .suggests((context, builder) -> suggestVanillaItemsInMapping(builder))
-                                    .executes(context -> setVanillaRuleFromMapping(
-                                            context.getSource(),
-                                            StringArgumentType.getString(context, "mapping")
-                                    )))
-            );
-
-            dispatcher.register(
-                    literal("imodelcopy")
-                            .then(argument("name", StringArgumentType.greedyString())
-                                    .executes(context -> copyHeldModel(
-                                            context.getSource(),
-                                            ModelCommandParser.normalizeNameArgument(
-                                                    StringArgumentType.getString(context, "name")
-                                            )
-                                    )))
-            );
-
-            dispatcher.register(
-                    literal("imodelcopyfrom")
-                            .then(argument("mapping", StringArgumentType.greedyString())
-                                    .suggests((context, builder) -> suggestCachedSourceNames(builder))
-                                    .executes(context -> copyCachedModel(
-                                            context.getSource(),
-                                            StringArgumentType.getString(context, "mapping")
-                                    )))
-            );
-        });
+        // Model commands were moved to AdditionalSettingsScreen.
     }
 
     /** Preview only: resolve a saved model, observed cache entry, or vanilla item ID. */
