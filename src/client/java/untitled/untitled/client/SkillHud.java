@@ -79,49 +79,6 @@ public final class SkillHud {
             if (overlay) onHudText(message);
         });
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
-            var root = literal("sh")
-                    .then(literal("toggle").executes(ctx -> {
-                        enabled = !enabled;
-                        EditHud.saveSettings();
-                        return 1;
-                    }))
-                    .then(literal("size")
-                            .then(argument("scale", FloatArgumentType.floatArg(0.5f, 5.0f))
-                                    .executes(ctx -> {
-                                        scale = FloatArgumentType.getFloat(ctx, "scale");
-                                        clampOffsets();
-                                        EditHud.saveSettings();
-                                        return 1;
-                                    })))
-                    .then(literal("list").executes(ctx -> {
-                        ctx.getSource().sendFeedback(Text.literal(
-                                "등록된 스킬: " + CATALOG_SKILLS.size()));
-                        for (Skill s : CATALOG_SKILLS.values()) {
-                            ctx.getSource().sendFeedback(Text.literal(
-                                    s.sword() + " " + s.slot() + " " + s.name()
-                                            + " " + s.cooldown() + "s | "
-                                            + (isVisible(s.key()) ? "ON" : "OFF")));
-                        }
-                        return 1;
-                    }))
-                    .then(literal("reset").executes(ctx -> {
-                        VISIBLE.clear();
-                        EditHud.saveSettings();
-                        return 1;
-                    }));
-            var swordArg = argument("sword", StringArgumentType.word())
-                    .then(literal("all")
-                            .then(literal("toggle").executes(ctx ->
-                                    toggleAll(StringArgumentType.getString(ctx, "sword")))));
-            for (String slot : ALL_SLOTS) {
-                swordArg.then(literal(slot)
-                        .then(literal("toggle").executes(ctx ->
-                                toggleSlot(StringArgumentType.getString(ctx, "sword"), slot))));
-            }
-            root.then(swordArg);
-            dispatcher.register(root);
-        });
     }
 
     private static String key(String sword, String slot) {
@@ -547,6 +504,21 @@ public final class SkillHud {
         }
     }
 
+    public static float settingsScale() { return scale; }
+    public static void setSettingsScale(float value) {
+        scale = Math.max(0.5f, Math.min(5f, value));
+        clampOffsets(); EditHud.saveSettings();
+    }
+    public static java.util.List<String> settingsSkills() {
+        java.util.List<String> result = new java.util.ArrayList<>();
+        for (Skill skill : CATALOG_SKILLS.values()) result.add(skill.key() + " : " + skill.name());
+        return result;
+    }
+    public static boolean settingsSkillVisible(String key) { return isVisible(key); }
+    public static void toggleSettingsSkill(String skillKey) {
+        VISIBLE.put(skillKey, !isVisible(skillKey)); EditHud.saveSettings();
+    }
+    public static void resetSettingsSkills() { VISIBLE.clear(); EditHud.saveSettings(); }
     public static boolean settingsEnabled() { return enabled; }
     public static void toggleSettingsEnabled() { enabled = !enabled; EditHud.saveSettings(); }
 }
