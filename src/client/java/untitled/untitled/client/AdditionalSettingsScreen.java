@@ -98,7 +98,7 @@ public final class AdditionalSettingsScreen extends Screen {
                 button("Self Glow: "+(Glow.settingsSelfEnabled()?"ON":"OFF"),r,y,()->{Glow.toggleSettingsSelf();refresh();});
                 button("Through Walls: "+(Glow.settingsThroughWalls()?"ON":"OFF"),l,y+25,
                     ()->{Glow.toggleSettingsThroughWalls();refresh();});
-                button("Self Color",r,y+25,()->open("Glow Self Color"));
+                button("Self Color",r,y+25,()->client.setScreen(new GlowColorScreen(this, "Self Glow Color", Glow::settingsSetColor)));
                 button("Manage Players",l,y+50,()->open("Glow Players"));
             }
             case "Glow Self Color" -> {
@@ -120,7 +120,9 @@ public final class AdditionalSettingsScreen extends Screen {
                 fields(y);
                 button("Set Player Name",l,y+25,()->{
                     if(first.getText().isBlank()) { feedback="Enter a player name"; return; }
-                    selectedGlow=first.getText();open("Glow Player Color");
+                    selectedGlow=first.getText();
+                    client.setScreen(new GlowColorScreen(this, "Player Glow Color",
+                        color -> Glow.settingsAddPlayer(selectedGlow, color)));
                 });
             }
             case "Glow Player Color" -> {
