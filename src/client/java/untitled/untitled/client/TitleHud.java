@@ -270,4 +270,13 @@ public final class TitleHud {
         try { return root.get(key).getAsInt(); }
         catch (RuntimeException ignored) { return fallback; }
     }
+
+    public static void openSettingsEditor() { editorDelayTicks = 2; }
+    public static boolean settingsEnabled() { return titleVisible || subtitleVisible; }
+    public static void toggleSettingsEnabled() {
+        boolean next = !titleVisible && !subtitleVisible;
+        titleVisible = next;
+        subtitleVisible = next;
+        EditHud.saveSettings();
+    }
 }
