@@ -29,7 +29,7 @@ public final class HudSettingsScreen extends Screen {
     }
 
     private HudSettingsScreen(Screen parent, int category) {
-        super(Text.literal("untitled HUD Settings"));
+        super(Text.literal("Made by 1_5_2"));
         this.parent = parent;
         this.category = category;
     }
@@ -101,7 +101,7 @@ public final class HudSettingsScreen extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer,
-            category < 0 ? "untitled HUD Settings" : NAMES[category],
+            category < 0 ? "Made by 1_5_2" : NAMES[category],
             width / 2, 18, 0xFFFFFF);
         if (category >= 0) {
             context.drawCenteredTextWithShadow(textRenderer,
