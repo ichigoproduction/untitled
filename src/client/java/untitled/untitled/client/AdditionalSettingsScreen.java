@@ -22,6 +22,8 @@ public final class AdditionalSettingsScreen extends Screen {
     private String selectedModel = "";
     private String selectedCache = "";
     private String selectedGhost = "";
+    private String selectedGlow = "";
+    private String selectedCape = "";
     private String state = "normal";
 
     public AdditionalSettingsScreen(Screen parent, String page) {
@@ -58,6 +60,14 @@ public final class AdditionalSettingsScreen extends Screen {
         client.setScreen(new ModelSelectionScreen(this, "Select Cached Item",
             ItemModelCache.settingsEntries(), name -> { selectedCache = name; }));
     }
+    private void chooseGlow() {
+        client.setScreen(new ModelSelectionScreen(this, "Select Glow Player",
+            Glow.settingsPlayers(), name -> selectedGlow = name));
+    }
+    private void chooseCape() {
+        client.setScreen(new ModelSelectionScreen(this, "Select Cape",
+            SkinChanger.settingsCapeNames(), name -> selectedCape = name));
+    }
     private void chooseGhost() {
         java.util.List<String> options = new java.util.ArrayList<>(ItemModelOverrides.settingsNames());
         for (String name : ItemModelCache.settingsEntries()) if (!options.contains(name)) options.add(name);
@@ -83,6 +93,70 @@ public final class AdditionalSettingsScreen extends Screen {
         super.init();
         int l = width/2 - 155, r = width/2 + 5, y=48;
         switch(page) {
+            case "Glow" -> {
+                button("Enabled: "+(Glow.settingsEnabled()?"ON":"OFF"),l,y,()->{Glow.toggleSettingsEnabled();refresh();});
+                button("Self Glow: "+(Glow.settingsSelfEnabled()?"ON":"OFF"),r,y,()->{Glow.toggleSettingsSelf();refresh();});
+                button("Through Walls: "+(Glow.settingsThroughWalls()?"ON":"OFF"),l,y+25,
+                    ()->{Glow.toggleSettingsThroughWalls();refresh();});
+                button("Self Color",r,y+25,()->open("Glow Self Color"));
+                button("Manage Players",l,y+50,()->open("Glow Players"));
+            }
+            case "Glow Self Color" -> {
+                fields(y);
+                button("Apply Color",l,y+25,()->{
+                    feedback=Glow.settingsSetColor(first.getText())?"Saved":"Enter a color or RRGGBB";
+                });
+            }
+            case "Glow Players" -> {
+                fields(y);
+                button("Select: "+selectedGlow,l,y+25,this::chooseGlow);
+                button("Remove Selected",r,y+25,()->{
+                    Glow.settingsRemovePlayer(selectedGlow);selectedGlow="";refresh();
+                });
+                button("Add Player",l,y+50,()->open("Glow Add Player"));
+                button("Clear Players",r,y+50,()->open("Glow Clear Confirmation"));
+            }
+            case "Glow Add Player" -> {
+                fields(y);
+                button("Set Player Name",l,y+25,()->{
+                    if(first.getText().isBlank()) { feedback="Enter a player name"; return; }
+                    selectedGlow=first.getText();open("Glow Player Color");
+                });
+            }
+            case "Glow Player Color" -> {
+                fields(y);
+                button("Save Player Color",l,y+25,()->{
+                    feedback=Glow.settingsAddPlayer(((AdditionalSettingsScreen)parent).selectedGlow,first.getText())
+                        ?"Saved":"Player not online or invalid color";
+                });
+            }
+            case "Glow Clear Confirmation" -> {
+                button("Confirm Clear",l,y,()->{Glow.settingsClearPlayers();client.setScreen(parent);});
+                button("Cancel",r,y,()->client.setScreen(parent));
+            }
+            case "Skin & Cape" -> {
+                button("Skin",l,y,()->open("Skin Settings"));
+                button("Cape",r,y,()->open("Cape Settings"));
+            }
+            case "Skin Settings" -> {
+                fields(y);
+                button("Apply Player Skin",l,y+25,()->{
+                    if (!first.getText().isBlank()) {SkinChanger.settingsApplySkin(first.getText()); feedback="Skin request sent";}
+                });
+                button("Reset Skin",r,y+25,()->{SkinChanger.settingsResetSkin();feedback="Skin reset";});
+            }
+            case "Cape Settings" -> {
+                button("Cape: "+selectedCape,l,y,this::chooseCape);
+                button("Apply Cape",r,y,()->{
+                    if(!selectedCape.isEmpty()){SkinChanger.settingsApplyCape(selectedCape);feedback="Cape request sent";}
+                });
+                button("Reset Cape",l,y+25,()->{SkinChanger.settingsResetCape();feedback="Cape reset";});
+            }
+            case "Optimizer" -> {
+                button("Enabled: "+(Optimizer.isEnabled()?"ON":"OFF"),l,y,()->{
+                    Optimizer.toggleSettingsEnabled();refresh();
+                });
+            }
             case "Party HUD" -> {
                 button("Enabled: "+(PartyHud.settingsEnabled()?"ON":"OFF"), l,y,()->{ PartyHud.toggleSettingsEnabled();refresh(); });
                 button("Mode: "+PartyHud.settingsMode(), r,y,()->{ PartyHud.cycleSettingsMode();refresh(); });
