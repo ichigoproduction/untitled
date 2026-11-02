@@ -362,6 +362,34 @@ public final class PartyHud {
         );
     }
 
+    public static boolean settingsGlow() { return partyGlowEnabled; }
+    public static void toggleSettingsGlow() { partyGlowEnabled = !partyGlowEnabled; saveSettings(); }
+    public static String settingsMode() { return viewMode.name(); }
+    public static void cycleSettingsMode() {
+        viewMode = viewMode == ViewMode.COMPACT ? ViewMode.DETAIL : ViewMode.COMPACT;
+        saveSettings();
+    }
+    public static String settingsSort() { return Targeting.getSortMode().name(); }
+    public static void cycleSettingsSort() {
+        switch (Targeting.getSortMode()) {
+            case ORDER -> Targeting.setSortModeDistance();
+            case DISTANCE -> Targeting.setSortModeHealth();
+            case HEALTH -> Targeting.setSortModeOrder();
+        }
+    }
+    public static java.util.List<String> settingsPlayers() {
+        java.util.List<String> list = new java.util.ArrayList<>();
+        for (Targeting.TargetInfo player : Targeting.all()) list.add(player.name + " (" + player.affinity + ")");
+        return list;
+    }
+    public static String settingsAddPlayer(String name, String role) {
+        Targeting.Affinity affinity;
+        try { affinity = Targeting.Affinity.valueOf(role.toUpperCase(java.util.Locale.ROOT)); }
+        catch (IllegalArgumentException e) { return "Invalid role"; }
+        return Targeting.addOrEnsureByName(name, affinity).name();
+    }
+    public static boolean settingsRemovePlayer(String name) { return Targeting.removeByName(name); }
+    public static void settingsClearPlayers() { Targeting.clearAll(); }
     private static int showPartyGlowStatus(
             net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource source
     ) {
