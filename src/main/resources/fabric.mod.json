@@ -11,6 +11,9 @@
   "entrypoints": {
     "client": [
       "untitled.untitled.client.UntitledClient"
+    ],
+    "modmenu": [
+      "untitled.untitled.client.UntitledModMenuIntegration"
     ]
   },
   "mixins": [
@@ -20,5 +23,8 @@
     "fabricloader": ">=${loader_version}",
     "fabric-api": "*",
     "minecraft": "${minecraft_version}"
+  },
+  "suggests": {
+    "modmenu": "*"
   }
 }
