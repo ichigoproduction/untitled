@@ -47,7 +47,7 @@ public final class ItemModelCache {
 
     private static boolean initialized = false;
     // Default ON for existing installations; a saved preference overrides this on launch.
-    private static boolean autoCacheEnabled = true;
+    private static boolean autoCacheEnabled = false;
 
     private ItemModelCache() {
     }
@@ -100,6 +100,22 @@ public final class ItemModelCache {
                                         .executes(context -> clearCache(context.getSource())))
                 )
         );
+    }
+
+    public static boolean settingsAutoCache() { return autoCacheEnabled; }
+    public static void toggleSettingsAutoCache() {
+        autoCacheEnabled = !autoCacheEnabled;
+        saveAutoCacheState();
+    }
+    public static java.util.List<String> settingsEntries() {
+        return new java.util.ArrayList<>(CACHE.keySet());
+    }
+    public static void settingsRemove(String name) {
+        if (CACHE.remove(name) != null) saveSettings();
+    }
+    public static void settingsClear() {
+        CACHE.clear();
+        saveSettings();
     }
 
     private static void scanVisibleItems(MinecraftClient client) {
@@ -166,7 +182,7 @@ public final class ItemModelCache {
     }
 
     private static void loadAutoCacheState() {
-        autoCacheEnabled = true;
+        autoCacheEnabled = false;
         if (!Files.isRegularFile(STATE_PATH)) {
             return;
         }
