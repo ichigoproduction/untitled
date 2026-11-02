@@ -18,13 +18,18 @@ public final class TitleHudScreen extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, width, height, 0x88000000);
+        // Leave the in-game scene visible for accurate positioning.
         TitleHud.renderEditorPreview(context);
         drawOutline(context, TitleHud.getTitleEditorBounds(), dragging == Target.TITLE);
         drawOutline(context, TitleHud.getSubtitleEditorBounds(), dragging == Target.SUBTITLE);
         context.drawCenteredTextWithShadow(textRenderer,
                 "Drag TITLE or SUBTITLE to move (ESC to save)", width / 2, 15, 0xFFFFFFFF);
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        // No dark overlay or world blur in position-editing mode.
     }
 
     private void drawOutline(DrawContext context, EditHud.HudBounds b, boolean selected) {
