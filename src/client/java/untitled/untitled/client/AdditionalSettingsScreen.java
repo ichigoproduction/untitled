@@ -11,7 +11,8 @@ import java.util.List;
 public final class AdditionalSettingsScreen extends Screen {
     private final Screen parent;
     private final String page;
-    private TextFieldWidget first, second;
+    private TextFieldWidget first;
+    private String pendingModelName = null;
     private String feedback = "";
     private int index = 0;
     private String state = "normal";
@@ -27,9 +28,8 @@ public final class AdditionalSettingsScreen extends Screen {
     }
     private void fields(int y) {
         first = new TextFieldWidget(textRenderer, width / 2 - 155, y, 150, 20, Text.literal("Name"));
-        second = new TextFieldWidget(textRenderer, width / 2 + 5, y, 150, 20, Text.literal("Value"));
-        first.setMaxLength(128); second.setMaxLength(128);
-        addDrawableChild(first); addDrawableChild(second);
+        first.setMaxLength(128);
+        addDrawableChild(first);
     }
     private void open(String p) { client.setScreen(new AdditionalSettingsScreen(this,p)); }
     private void refresh() { clearAndInit(); }
@@ -47,11 +47,11 @@ public final class AdditionalSettingsScreen extends Screen {
         int l = width/2 - 155, r = width/2 + 5, y=48;
         switch(page) {
             case "Party HUD" -> {
-                button("Mode: "+PartyHud.settingsMode(), l,y,()->{ PartyHud.cycleSettingsMode();refresh(); });
-                button("Sort: "+PartyHud.settingsSort(), r,y,()->{ PartyHud.cycleSettingsSort();refresh(); });
-                button("Party Glow: "+(PartyHud.settingsGlow()?"ON":"OFF"),l,y+25,()->{ PartyHud.toggleSettingsGlow();refresh(); });
-                button("Manage Players",r,y+25,()->open("Manage Players"));
-                button("Clear All Players",l,y+50,()->open("Clear Party Confirmation"));
+                button("Enabled: "+(PartyHud.settingsEnabled()?"ON":"OFF"), l,y,()->{ PartyHud.toggleSettingsEnabled();refresh(); });
+                button("Mode: "+PartyHud.settingsMode(), r,y,()->{ PartyHud.cycleSettingsMode();refresh(); });
+                button("Sort: "+PartyHud.settingsSort(), l,y+25,()->{ PartyHud.cycleSettingsSort();refresh(); });
+                button("Party Glow: "+(PartyHud.settingsGlow()?"ON":"OFF"),r,y+25,()->{ PartyHud.toggleSettingsGlow();refresh(); });
+                button("Manage Players",l,y+50,()->open("Manage Players"));
             }
             case "Manage Players" -> {
                 fields(y);
@@ -66,6 +66,7 @@ public final class AdditionalSettingsScreen extends Screen {
                 button("Remove Selected",r,y+75,()->{
                     String p=selected(players);if(!p.isEmpty()) PartyHud.settingsRemovePlayer(p.split(" \\(")[0]);refresh();
                 });
+                button("Clear All Players",l,y+100,()->open("Clear Party Confirmation"));
             }
             case "Clear Party Confirmation" -> {
                 button("Confirm Clear Players",l,y,()->{PartyHud.settingsClearPlayers();client.setScreen(parent);});
@@ -98,8 +99,17 @@ public final class AdditionalSettingsScreen extends Screen {
                 button("Remove Selected",r,y+25,()->{
                     ItemModelOverrides.settingsRemove(selected(models));refresh();
                 });
-                button("Map Name to Item ID",l,y+50,()->{
-                    feedback=ItemModelOverrides.settingsMapVanilla(first.getText(),second.getText())?"Saved":"Invalid name or item ID";
+                button(pendingModelName == null ? "Set Model Name" : "Save Item ID",l,y+50,()->{
+                    if (pendingModelName == null) {
+                        if (first.getText().isBlank()) { feedback = "Enter a model name"; return; }
+                        pendingModelName = first.getText();
+                        first.setText("");
+                        feedback = "Enter item ID for " + pendingModelName;
+                    } else {
+                        feedback = ItemModelOverrides.settingsMapVanilla(pendingModelName, first.getText())
+                            ? "Saved" : "Invalid item ID";
+                        if (feedback.equals("Saved")) { pendingModelName = null; first.setText(""); }
+                    }
                 });
             }
             case "Copy Held Item" -> {
@@ -114,11 +124,11 @@ public final class AdditionalSettingsScreen extends Screen {
                     state=state.equals("normal")?"sheathed":state.equals("sheathed")?"drawn":"normal";refresh();
                 });
                 button("Copy Cache to Target",r,y+25,()->{
-                    feedback=ItemModelOverrides.settingsCopyCache(first.getText(),second.getText(),state)?"Saved":"Cache missing or invalid target/state";
+                    feedback=ItemModelOverrides.settingsCopyCache(selected(ItemModelCache.settingsEntries()),first.getText(),state)?"Saved":"Select a cached source and enter a target";
                 });
                 button("Source: "+selected(ItemModelCache.settingsEntries()),l,y+50,
                     ()->cycle(ItemModelCache.settingsEntries()));
-                button("Use Selected Source",r,y+50,()->first.setText(selected(ItemModelCache.settingsEntries())));
+                button("Target Name: Input Above",r,y+50,()->{feedback="Enter the target model name in the input field";});
             }
             case "Render Settings" -> {
                 List<String> models=ItemModelOverrides.settingsNames();
