@@ -842,4 +842,9 @@ public final class FoodStack {
             int totalHeight
     ) {
     }
+
+    public static boolean foodSettingsEnabled() { return foodEnabled; }
+    public static boolean drinkSettingsEnabled() { return drinkEnabled; }
+    public static void toggleFoodSettings() { foodEnabled = !foodEnabled; saveSettings(); }
+    public static void toggleDrinkSettings() { drinkEnabled = !drinkEnabled; saveSettings(); }
 }
