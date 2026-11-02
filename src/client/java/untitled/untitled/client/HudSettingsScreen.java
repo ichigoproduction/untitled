@@ -4,30 +4,17 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
+import java.util.List;
 
-/**
- * Vanilla-style, two-column HUD settings menu.
- * All labels are English and all settings use the existing HUD persistence.
- */
+/** English vanilla-style HUD configuration, also opened by /152. */
 public final class HudSettingsScreen extends Screen {
-    private static final String[] NAMES = {
-        "HUD Position", "Skill HUD", "Food HUD", "Drink HUD", "Syringe HUD", "Title HUD"
-    };
-    private static final String[] DESCRIPTIONS = {
-        "Move on-screen widgets", "Skill cooldown display", "Food stack tracker",
-        "Drink stack tracker", "Syringe cooldown", "Title and subtitle"
-    };
-    private static final int BUTTON_WIDTH = 150;
-    private static final int BUTTON_HEIGHT = 20;
-    private static final int COLUMN_GAP = 10;
-    private static final int ROW_GAP = 5;
+    private static final String[] NAMES = {"HUD Position", "Skill HUD", "Food HUD", "Drink HUD", "Syringe HUD", "Title HUD"};
+    private static final int W = 150, H = 20, GAP = 10;
     private final Screen parent;
     private final int category;
+    private int skillPage;
 
-    public HudSettingsScreen(Screen parent) {
-        this(parent, -1);
-    }
-
+    public HudSettingsScreen(Screen parent) { this(parent, -1); }
     private HudSettingsScreen(Screen parent, int category) {
         super(Text.literal("Made by 1_5_2"));
         this.parent = parent;
@@ -37,80 +24,116 @@ public final class HudSettingsScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        int left = width / 2 - (BUTTON_WIDTH * 2 + COLUMN_GAP) / 2;
-        int top = 48;
+        int left = width / 2 - W - GAP / 2;
         if (category < 0) {
             for (int i = 0; i < NAMES.length; i++) {
                 final int target = i;
-                int x = left + (i % 2) * (BUTTON_WIDTH + COLUMN_GAP);
-                int y = top + (i / 2) * (BUTTON_HEIGHT + ROW_GAP);
-                addDrawableChild(ButtonWidget.builder(Text.literal(NAMES[i]),
-                    button -> client.setScreen(new HudSettingsScreen(parent, target)))
-                    .dimensions(x, y, BUTTON_WIDTH, BUTTON_HEIGHT).build());
+                addButton(NAMES[i], left + (i % 2) * (W + GAP), 48 + (i / 2) * 25,
+                    () -> client.setScreen(new HudSettingsScreen(parent, target)));
             }
         } else {
-            if (category == 0 || category == 5) {
-                addDrawableChild(ButtonWidget.builder(Text.literal("Edit Positions"),
-                    button -> {
-                        client.setScreen(null);
-                        if (category == 0) EditHud.openSettingsEditor();
-                        else TitleHud.openSettingsEditor();
-                    }).dimensions(left, top, BUTTON_WIDTH, BUTTON_HEIGHT).build());
-            }
-            if (category != 0) {
-                int toggleX = (category == 5) ? left + BUTTON_WIDTH + COLUMN_GAP : left;
-                addDrawableChild(ButtonWidget.builder(Text.literal(toggleLabel()), button -> {
-                    toggleCategory();
-                    button.setMessage(Text.literal(toggleLabel()));
-                }).dimensions(toggleX, top, BUTTON_WIDTH, BUTTON_HEIGHT).build());
-            }
-            addDrawableChild(ButtonWidget.builder(Text.literal("Back"),
-                button -> client.setScreen(new HudSettingsScreen(parent)))
-                .dimensions(width / 2 - BUTTON_WIDTH / 2, top + 2 * (BUTTON_HEIGHT + ROW_GAP),
-                    BUTTON_WIDTH, BUTTON_HEIGHT).build());
+            buildDetails(left);
         }
-        addDrawableChild(ButtonWidget.builder(Text.literal("Done"),
-            button -> close()).dimensions(width / 2 - BUTTON_WIDTH / 2, height - 28,
-                BUTTON_WIDTH, BUTTON_HEIGHT).build());
+        addButton(category < 0 ? "Done" : "Back", width / 2 - W / 2, height - 28,
+            () -> client.setScreen(category < 0 ? parent : new HudSettingsScreen(parent)));
     }
 
-    private String toggleLabel() {
-        boolean enabled = switch (category) {
-            case 1 -> SkillHud.settingsEnabled();
-            case 2 -> FoodStack.foodSettingsEnabled();
-            case 3 -> FoodStack.drinkSettingsEnabled();
-            case 4 -> SyringeCooldownHud.settingsEnabled();
-            case 5 -> TitleHud.settingsEnabled();
-            default -> false;
-        };
-        return "Enabled: " + (enabled ? "ON" : "OFF");
+    private void addButton(String label, int x, int y, Runnable action) {
+        addDrawableChild(ButtonWidget.builder(Text.literal(label), b -> action.run()).dimensions(x, y, W, H).build());
     }
 
-    private void toggleCategory() {
+    private void buildDetails(int left) {
+        int y = 48;
         switch (category) {
-            case 1 -> SkillHud.toggleSettingsEnabled();
-            case 2 -> FoodStack.toggleFoodSettings();
-            case 3 -> FoodStack.toggleDrinkSettings();
-            case 4 -> SyringeCooldownHud.toggleSettingsEnabled();
-            case 5 -> TitleHud.toggleSettingsEnabled();
-            default -> { }
+            case 0 -> {
+                addButton("Edit Positions", left, y, () -> {
+                    client.setScreen(null); EditHud.openSettingsEditor();
+                });
+                addButton("Reset Positions", left + W + GAP, y, EditHud::resetSettingsPositions);
+            }
+            case 1 -> {
+                addButton("Enabled: " + on(SkillHud.settingsEnabled()), left, y, () -> { SkillHud.toggleSettingsEnabled(); refresh(); });
+                addButton("Size: " + percent(SkillHud.settingsScale()), left + W + GAP, y, () -> {
+                    SkillHud.setSettingsScale(nextScale(SkillHud.settingsScale())); refresh();
+                });
+                addButton("Edit Positions", left, y + 25, () -> { client.setScreen(null); EditHud.openSettingsEditor(); });
+                addButton("Reset Skill Filters", left + W + GAP, y + 25, () -> { SkillHud.resetSettingsSkills(); refresh(); });
+                List<String> skills = SkillHud.settingsSkills();
+                int perPage = Math.max(2, ((height - 154) / 25) * 2);
+                int pages = Math.max(1, (skills.size() + perPage - 1) / perPage);
+                skillPage = Math.min(skillPage, pages - 1);
+                for (int i = skillPage * perPage, j = 0; i < skills.size() && j < perPage; i++, j++) {
+                    final String item = skills.get(i);
+                    String key = item.substring(0, item.indexOf(" : "));
+                    String label = item.substring(item.indexOf(" : ") + 3);
+                    String caption = label + ": " + on(SkillHud.settingsSkillVisible(key));
+                    addButton(caption, left + (j % 2) * (W + GAP), y + 50 + (j / 2) * 25,
+                        () -> { SkillHud.toggleSettingsSkill(key); refresh(); });
+                }
+                addButton("Skills Page " + (skillPage + 1) + "/" + pages, left, height - 53,
+                    () -> { skillPage = (skillPage + 1) % pages; refresh(); });
+            }
+            case 2 -> {
+                addButton("Enabled: " + on(FoodStack.foodSettingsEnabled()), left, y, () -> { FoodStack.toggleFoodSettings(); refresh(); });
+                addButton("Stacks: " + FoodStack.settingsFoodSegments(), left + W + GAP, y, () -> { FoodStack.toggleSettingsFoodSegments(); refresh(); });
+                addButton("Layout: " + (FoodStack.settingsFoodVertical() ? "Vertical" : "Horizontal"), left, y+25,
+                    () -> { FoodStack.toggleSettingsFoodLayout(); refresh(); });
+                addButton("Color: " + FoodStack.settingsColor(true), left + W + GAP, y+25,
+                    () -> { FoodStack.cycleSettingsColor(true); refresh(); });
+                addButton("Shape: " + FoodStack.settingsShape(true), left, y+50,
+                    () -> { FoodStack.cycleSettingsShape(true); refresh(); });
+                addButton("Reset Stack", left + W + GAP, y+50, () -> { FoodStack.resetSettingsStack(true); refresh(); });
+                editButton(left, y+75);
+            }
+            case 3 -> {
+                addButton("Enabled: " + on(FoodStack.drinkSettingsEnabled()), left, y, () -> { FoodStack.toggleDrinkSettings(); refresh(); });
+                addButton("Color: " + FoodStack.settingsColor(false), left + W + GAP, y,
+                    () -> { FoodStack.cycleSettingsColor(false); refresh(); });
+                addButton("Shape: " + FoodStack.settingsShape(false), left, y+25,
+                    () -> { FoodStack.cycleSettingsShape(false); refresh(); });
+                addButton("Reset Stack", left + W + GAP, y+25, () -> { FoodStack.resetSettingsStack(false); refresh(); });
+                editButton(left, y+50);
+            }
+            case 4 -> {
+                addButton("Enabled: " + on(SyringeCooldownHud.settingsEnabled()), left, y,
+                    () -> { SyringeCooldownHud.toggleSettingsEnabled(); refresh(); });
+                addButton("Size: " + percent(SyringeCooldownHud.settingsScale()), left + W + GAP, y,
+                    () -> { SyringeCooldownHud.setSettingsScale(nextScale(SyringeCooldownHud.settingsScale())); refresh(); });
+                editButton(left, y+25);
+            }
+            case 5 -> {
+                addButton("Title: " + on(TitleHud.settingsTitleVisible()), left, y,
+                    () -> { TitleHud.toggleSettingsTitle(); refresh(); });
+                addButton("Subtitle: " + on(TitleHud.settingsSubtitleVisible()), left + W + GAP, y,
+                    () -> { TitleHud.toggleSettingsSubtitle(); refresh(); });
+                addButton("Title Size: " + percent(TitleHud.settingsTitleSize()), left, y+25,
+                    () -> { TitleHud.setSettingsTitleSize(nextScale(TitleHud.settingsTitleSize())); refresh(); });
+                addButton("Subtitle Size: " + percent(TitleHud.settingsSubtitleSize()), left + W + GAP, y+25,
+                    () -> { TitleHud.setSettingsSubtitleSize(nextScale(TitleHud.settingsSubtitleSize())); refresh(); });
+                addButton("Edit Positions", left, y+50,
+                    () -> { client.setScreen(null); TitleHud.openSettingsEditor(); });
+                addButton("Reset Positions", left + W + GAP, y+50,
+                    () -> { TitleHud.resetSettingsPositions(); refresh(); });
+            }
+            default -> {}
         }
     }
+
+    private void editButton(int x, int y) {
+        addButton("Edit Positions", x, y, () -> { client.setScreen(null); EditHud.openSettingsEditor(); });
+    }
+    private void refresh() { clearAndInit(); }
+    private static String on(boolean enabled) { return enabled ? "ON" : "OFF"; }
+    private static String percent(float scale) { return Math.round(scale * 100) + "%"; }
+    private static float nextScale(float current) { return current >= 2.0f ? 0.5f : Math.round((current + 0.1f) * 10f) / 10f; }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
         context.drawCenteredTextWithShadow(textRenderer,
-            category < 0 ? "Made by 1_5_2" : NAMES[category],
-            width / 2, 18, 0xFFFFFF);
-        if (category >= 0) {
-            context.drawCenteredTextWithShadow(textRenderer,
-                DESCRIPTIONS[category], width / 2, 33, 0xA0A0A0);
-        }
+            category < 0 ? "Made by 1_5_2" : NAMES[category], width / 2, 18, 0xFFFFFF);
     }
 
     @Override
-    public void close() {
-        client.setScreen(parent);
-    }
+    public void close() { client.setScreen(parent); }
 }
