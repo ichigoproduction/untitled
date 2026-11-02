@@ -44,6 +44,8 @@ public final class EditHud extends Screen {
     private static boolean loadingSettings = false;
     private static int openEditorDelayTicks = -1;
     private DragTarget dragTarget = DragTarget.NONE;
+    private double dragStartX, dragStartY;
+    private int appliedDragX, appliedDragY;
 
     public record HudBounds(int x, int y, int width, int height) {
         public boolean contains(double mouseX, double mouseY) {
@@ -102,7 +104,7 @@ public final class EditHud extends Screen {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, width, height, 0x88000000);
+        // Keep the world visible while editing HUD positions.
 
         PartyHud.renderEditorPreview(context);
         FoodStack.renderFoodEditorPreview(context);
@@ -145,6 +147,19 @@ public final class EditHud extends Screen {
         super.render(context, mouseX, mouseY, delta);
     }
 
+    private void startDragging(DragTarget target, double mouseX, double mouseY) {
+        dragTarget = target;
+        dragStartX = mouseX;
+        dragStartY = mouseY;
+        appliedDragX = 0;
+        appliedDragY = 0;
+    }
+
+    @Override
+    public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
+        // Do not dim or blur the live world behind the HUD editor.
+    }
+
     private void drawSelectionBox(DrawContext context, HudBounds bounds, boolean active) {
         int color = active ? 0xFFEAD075 : 0x99FFFFFF;
         int x1 = bounds.x() - 4;
@@ -162,24 +177,24 @@ public final class EditHud extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
             if (SkillHud.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.SKILL;
+                startDragging(DragTarget.SKILL, mouseX, mouseY);
                 return true;
             }
             // The syringe preview is drawn on top, so it gets first chance at a click.
             if (SyringeCooldownHud.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.SYRINGE;
+                startDragging(DragTarget.SYRINGE, mouseX, mouseY);
                 return true;
             }
             if (PartyHud.getEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.PARTY;
+                startDragging(DragTarget.PARTY, mouseX, mouseY);
                 return true;
             }
             if (FoodStack.getFoodEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.FOOD;
+                startDragging(DragTarget.FOOD, mouseX, mouseY);
                 return true;
             }
             if (FoodStack.getDrinkEditorBounds().contains(mouseX, mouseY)) {
-                dragTarget = DragTarget.DRINK;
+                startDragging(DragTarget.DRINK, mouseX, mouseY);
                 return true;
             }
         }
@@ -195,8 +210,14 @@ public final class EditHud extends Screen {
             double deltaY
     ) {
         if (button == 0 && dragTarget != DragTarget.NONE) {
-            int moveX = (int) Math.round(deltaX);
-            int moveY = (int) Math.round(deltaY);
+            // Derive movement from the full cursor displacement so fractional
+            // mouse motion is not lost on each event.
+            int totalX = (int) Math.round(mouseX - dragStartX);
+            int totalY = (int) Math.round(mouseY - dragStartY);
+            int moveX = totalX - appliedDragX;
+            int moveY = totalY - appliedDragY;
+            appliedDragX = totalX;
+            appliedDragY = totalY;
 
             if (dragTarget == DragTarget.PARTY) {
                 PartyHud.moveBy(moveX, moveY);
