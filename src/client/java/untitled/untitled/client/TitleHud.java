@@ -46,66 +46,6 @@ public final class TitleHud {
         if (initialized) return;
         initialized = true;
 
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registry) -> {
-            dispatcher.register(literal("th")
-                    .then(literal("toggle").executes(ctx -> {
-                        // If either is visible, the group toggle hides both.
-                        boolean show = !titleVisible && !subtitleVisible;
-                        titleVisible = show;
-                        subtitleVisible = show;
-                        EditHud.saveSettings();
-                        return 1;
-                    }))
-                    .then(literal("size")
-                            .then(argument("value", FloatArgumentType.floatArg(MIN_SIZE, MAX_SIZE))
-                                    .executes(ctx -> {
-                                        float value = FloatArgumentType.getFloat(ctx, "value");
-                                        titleSize = value;
-                                        subtitleSize = value;
-                                        EditHud.saveSettings();
-                                        return 1;
-                                    })))
-                    .then(literal("title")
-                            .then(literal("toggle").executes(ctx -> {
-                                titleVisible = !titleVisible;
-                                EditHud.saveSettings();
-                                return 1;
-                            }))
-                            .then(literal("size")
-                                    .then(argument("value", FloatArgumentType.floatArg(MIN_SIZE, MAX_SIZE))
-                                            .executes(ctx -> {
-                                                titleSize = FloatArgumentType.getFloat(ctx, "value");
-                                                EditHud.saveSettings();
-                                                return 1;
-                                            }))))
-                    .then(literal("subtitle")
-                            .then(literal("toggle").executes(ctx -> {
-                                subtitleVisible = !subtitleVisible;
-                                EditHud.saveSettings();
-                                return 1;
-                            }))
-                            .then(literal("size")
-                                    .then(argument("value", FloatArgumentType.floatArg(MIN_SIZE, MAX_SIZE))
-                                            .executes(ctx -> {
-                                                subtitleSize = FloatArgumentType.getFloat(ctx, "value");
-                                                EditHud.saveSettings();
-                                                return 1;
-                                            })))));
-            dispatcher.register(literal("thud")
-                    .executes(ctx -> {
-                        editorDelayTicks = 2;
-                        return 1;
-                    })
-                    .then(literal("reset").executes(ctx -> {
-                        titleOffsetX = 0;
-                        titleOffsetY = 0;
-                        subtitleOffsetX = 0;
-                        subtitleOffsetY = 0;
-                        EditHud.saveSettings();
-                        return 1;
-                    })));
-        });
-
         // Open on the client tick instead of inside the command dispatch.
         // This mirrors the existing /hud editor and keeps chat focus intact.
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -271,6 +211,22 @@ public final class TitleHud {
         catch (RuntimeException ignored) { return fallback; }
     }
 
+    public static boolean settingsTitleVisible() { return titleVisible; }
+    public static boolean settingsSubtitleVisible() { return subtitleVisible; }
+    public static void toggleSettingsTitle() { titleVisible = !titleVisible; EditHud.saveSettings(); }
+    public static void toggleSettingsSubtitle() { subtitleVisible = !subtitleVisible; EditHud.saveSettings(); }
+    public static float settingsTitleSize() { return titleSize; }
+    public static float settingsSubtitleSize() { return subtitleSize; }
+    public static void setSettingsTitleSize(float value) {
+        titleSize = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value)); EditHud.saveSettings();
+    }
+    public static void setSettingsSubtitleSize(float value) {
+        subtitleSize = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value)); EditHud.saveSettings();
+    }
+    public static void resetSettingsPositions() {
+        titleOffsetX = titleOffsetY = subtitleOffsetX = subtitleOffsetY = 0;
+        EditHud.saveSettings();
+    }
     public static void openSettingsEditor() { editorDelayTicks = 2; }
     public static boolean settingsEnabled() { return titleVisible || subtitleVisible; }
     public static void toggleSettingsEnabled() {
