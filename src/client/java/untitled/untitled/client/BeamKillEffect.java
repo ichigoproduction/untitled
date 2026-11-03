@@ -106,10 +106,10 @@ public final class BeamKillEffect {
         ACTIVE.add(new Beam(world, blockPos, color, nowMs + DURATION_MS));
 
         // Restrained thunder crack + beacon activation for a bright electrical strike.
-        world.playSound(pos.x, pos.y, pos.z,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z,
                 resolveSound(SoundEvents.ENTITY_LIGHTNING_BOLT_THUNDER),
                 SoundCategory.PLAYERS, 0.70f, 1.27f, false);
-        world.playSound(pos.x, pos.y, pos.z,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z,
                 resolveSound(SoundEvents.BLOCK_BEACON_ACTIVATE),
                 SoundCategory.PLAYERS, 0.60f, 1.38f, false);
     }
@@ -124,7 +124,7 @@ public final class BeamKillEffect {
             }
             if (nowMs >= beam.expiresAt) {
                 // Play Beacon Deactivate exactly once as the three-second beam vanishes.
-                world.playSound(beam.position.getX() + 0.5,
+                KillEffectSounds.play(world,beam.position.getX() + 0.5,
                         beam.position.getY() + 0.5,
                         beam.position.getZ() + 0.5,
                         resolveSound(SoundEvents.BLOCK_BEACON_DEACTIVATE),
