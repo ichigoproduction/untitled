@@ -67,7 +67,8 @@ def sign(args):
             raise SystemExit("JAR mod id/version do not match release")
         if "untitled/untitled/client/UntitledClient.class" not in archive.namelist():
             raise SystemExit("Client entrypoint missing")
-    sha256 = hashlib.file_digest(jar.open("rb"), "sha256").hexdigest()
+    with jar.open("rb") as stream:
+        sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
     url = DOMAIN + "/downloads/" + expected
     password = getpass.getpass("Private-key password: ").encode("utf-8")
     key = serialization.load_pem_private_key(args.private.read_bytes(), password=password)
