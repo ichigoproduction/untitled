@@ -322,7 +322,13 @@ public final class KillEffect {
             t.lastSeenMs = now;
             t.lastPos = pos;
             t.playerName = player.getGameProfile().getName();
-            t.playerProfile = profile;
+            // A later network update can temporarily omit the signed textures.
+            // Keep the last complete profile rather than regressing to default skin.
+            if (profile.getProperties().containsKey("textures")
+                    || t.playerProfile == null
+                    || !t.playerProfile.getProperties().containsKey("textures")) {
+                t.playerProfile = profile;
+            }
         }
     }
 
