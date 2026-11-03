@@ -33,6 +33,7 @@ public final class AutoUpdater {
     private AutoUpdater() {}
 
     public static String status() { return status; }
+    public static String installedVersion() { return currentVersion(); }
     public static String availableVersion() { return release == null ? "" : release.version(); }
     public static boolean hasUpdate() { return release != null; }
     public static boolean isBusy() { return busy; }
