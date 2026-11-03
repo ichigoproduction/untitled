@@ -4,13 +4,13 @@ package untitled.untitled.client;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
@@ -128,6 +128,8 @@ public final class KillEffect {
 
     private static boolean enabled = false;
     private static EffectType effect = EffectType.THUNDER;
+    // 100% preserves the previous audio levels; saved separately from effect selection.
+    private static int soundVolume = 100;
 
     // ===== Player-only kill heuristic tracking =====
     private static final long TRACK_TIMEOUT_MS = 1000;
@@ -148,13 +150,16 @@ public final class KillEffect {
         long lastSeenMs;
         Vec3d lastPos;
         String playerName;
+        GameProfile playerProfile;
 
-        Track(UUID playerUuid, int entityId, long nowMs, Vec3d pos, String name) {
+        Track(UUID playerUuid, int entityId, long nowMs, Vec3d pos,
+              String name, GameProfile profile) {
             this.playerUuid = playerUuid;
             this.entityId = entityId;
             this.lastSeenMs = nowMs;
             this.lastPos = pos;
             this.playerName = name;
+            this.playerProfile = profile;
         }
     }
 
@@ -221,6 +226,13 @@ public final class KillEffect {
 
     // ===== GUI control API =====
     public static boolean settingsEnabled() { return enabled; }
+    public static int settingsSoundVolume() { return soundVolume; }
+    public static void settingsSetSoundVolume(int percent) {
+        int clamped = MathHelper.clamp(percent, 0, 200);
+        if (clamped == soundVolume) return;
+        soundVolume = clamped;
+        saveConfig();
+    }
     public static String settingsEffect() { return effect.displayName(); }
     public static java.util.List<String> settingsEffects() {
         return java.util.Arrays.stream(EffectType.values()).map(EffectType::displayName).toList();
@@ -241,7 +253,8 @@ public final class KillEffect {
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc == null || mc.world == null || mc.player == null) return;
         Vec3d pos = mc.player.getPos().add(mc.player.getRotationVec(1.0f).multiply(2.5));
-        trigger(effect, mc.world, pos, System.currentTimeMillis(), mc.player.getUuid(), mc.player.getGameProfile().getName());
+        trigger(effect, mc.world, pos, System.currentTimeMillis(), mc.player.getUuid(),
+                mc.player.getGameProfile().getName(), profileWithTextures(mc.player));
     }
 
     // ===== Public API =====
@@ -299,17 +312,34 @@ public final class KillEffect {
         }
 
         Vec3d pos = player.getPos();
+        GameProfile profile = profileWithTextures(player);
         Track t = tracks.get(uuid);
         if (t == null) {
-            tracks.put(uuid, new Track(uuid, id, now, pos, player.getGameProfile().getName()));
+            tracks.put(uuid, new Track(uuid, id, now, pos, player.getGameProfile().getName(), profile));
         } else {
-            // Keep one Track per player while refreshing the latest runtime id
-            // and position in case the server replaces the client-side entity.
+            // Keep the real network/target profile (including textures), not just UUID/name.
             t.entityId = id;
             t.lastSeenMs = now;
             t.lastPos = pos;
             t.playerName = player.getGameProfile().getName();
+            t.playerProfile = profile;
         }
+    }
+
+    private static GameProfile profileWithTextures(PlayerEntity player) {
+        GameProfile live = player.getGameProfile();
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc != null && mc.getNetworkHandler() != null) {
+            var entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
+            if (entry != null) {
+                GameProfile networkProfile = entry.getProfile();
+                if (networkProfile.getProperties().containsKey("textures")
+                        || !live.getProperties().containsKey("textures")) {
+                    return networkProfile;
+                }
+            }
+        }
+        return live;
     }
 
     // ===== Tick logic =====
@@ -351,6 +381,12 @@ public final class KillEffect {
             } else if (e instanceof PlayerEntity player
                     && player.getUuid().equals(tr.playerUuid)) {
                 tr.lastPos = player.getPos();
+                GameProfile latestProfile = profileWithTextures(player);
+                if (latestProfile.getProperties().containsKey("textures")
+                        || tr.playerProfile == null
+                        || !tr.playerProfile.getProperties().containsKey("textures")) {
+                    tr.playerProfile = latestProfile;
+                }
                 dead = !player.isAlive();
             } else {
                 // Runtime entity ids may be reused. Never let another entity or
@@ -364,7 +400,7 @@ public final class KillEffect {
                 // observations overlap, only the first transition for this UUID
                 // can produce a kill effect until the player is alive again.
                 if (enabled && tr.lastPos != null && killLockedPlayers.add(tr.playerUuid)) {
-                    trigger(effect, world, tr.lastPos, nowMs, tr.playerUuid, tr.playerName);
+                    trigger(effect, world, tr.lastPos, nowMs, tr.playerUuid, tr.playerName, tr.playerProfile);
                 }
                 it.remove();
             }
@@ -404,7 +440,7 @@ public final class KillEffect {
                         p.x, p.y, p.z, Math.cos(angle)*spread*speed, z*speed,
                         Math.sin(angle)*spread*speed);
                 }
-                world.playSound(p.x,p.y,p.z, SoundEvents.ENTITY_FIREWORK_ROCKET_BLAST,
+                KillEffectSounds.play(world,p.x,p.y,p.z, SoundEvents.ENTITY_FIREWORK_ROCKET_BLAST,
                     SoundCategory.PLAYERS, 0.9f, 1.05f, false);
             }
             if (age > 850) it.remove();
@@ -437,7 +473,7 @@ public final class KillEffect {
             if (nowMs < chime.playAt) continue;
             // Soft ethereal aftertone rather than the previous flute melody.
             SoundEvent shimmer = soundOfByIdFallback("block.amethyst_block.chime", SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME);
-            if (shimmer != null) world.playSound(chime.pos.x, chime.pos.y, chime.pos.z,
+            if (shimmer != null) KillEffectSounds.play(world,chime.pos.x, chime.pos.y, chime.pos.z,
                     shimmer, SoundCategory.PLAYERS, 0.52f, 0.90f, false);
             it.remove();
         }
@@ -456,9 +492,9 @@ public final class KillEffect {
         // Soul-like magical whoosh with a gentle blossom rustle, not a cheerful instrument.
         SoundEvent leaves = soundOfByIdFallback("block.cherry_leaves.break", SoundEvents.BLOCK_CHERRY_LEAVES_BREAK);
         SoundEvent spirit = soundOfByIdFallback("entity.enderman.teleport", SoundEvents.ENTITY_ENDERMAN_TELEPORT);
-        if (leaves != null) world.playSound(pos.x, pos.y, pos.z,
+        if (leaves != null) KillEffectSounds.play(world,pos.x, pos.y, pos.z,
                 leaves, SoundCategory.PLAYERS, 0.32f, 0.95f, false);
-        if (spirit != null) world.playSound(pos.x, pos.y, pos.z,
+        if (spirit != null) KillEffectSounds.play(world,pos.x, pos.y, pos.z,
                 spirit, SoundCategory.PLAYERS, 0.55f, 1.45f, false);
         if (roseChimes.size() >= 6) roseChimes.remove(0);
         roseChimes.add(new RoseChime(world, pos, nowMs + 280L));
@@ -506,35 +542,52 @@ public final class KillEffect {
             }
             if (nowMs < pending.playAt) continue;
             SoundEvent shear = soundOfByIdFallback("entity.sheep.shear", SoundEvents.ENTITY_SHEEP_SHEAR);
-            if (shear != null) playMaster(shear, 0.95f, 1.0f);
+            if (shear != null) KillEffectSounds.playMaster(shear, 0.95f, 1.0f);
             it.remove();
         }
     }
 
-    private static void spawnHead(ClientWorld world, Vec3d pos, UUID uuid, String name) {
+    private static void spawnHead(ClientWorld world, Vec3d pos, UUID uuid, String name,
+                                  GameProfile victimProfile) {
         ItemStack head = new ItemStack(Items.PLAYER_HEAD);
-        if (uuid != null && name != null) {
-            head.set(net.minecraft.component.DataComponentTypes.PROFILE,
-                new net.minecraft.component.type.ProfileComponent(new com.mojang.authlib.GameProfile(uuid, name)));
-        }
+        // A new GameProfile(uuid, name) contains no textures and renders Steve/Alex.
+        // Preserve the attacked player's signed textures from the network profile.
+        GameProfile profile = victimProfile != null ? victimProfile : new GameProfile(uuid, name);
+        net.minecraft.component.type.ProfileComponent component =
+                new net.minecraft.component.type.ProfileComponent(profile);
+        head.set(net.minecraft.component.DataComponentTypes.PROFILE, component);
+
         // Cosmetic local-only item entity, automatically removed; never creates server loot.
         net.minecraft.entity.ItemEntity drop = new net.minecraft.entity.ItemEntity(
             world, pos.x, pos.y + 1.25, pos.z, head);
         drop.setVelocity((Math.random() - 0.5) * 0.16, 0.24, (Math.random() - 0.5) * 0.16);
         drop.setPickupDelayInfinite();
         world.addEntity(drop);
+
+        // If the skin has not reached the client yet, complete the profile
+        // asynchronously and update this exact head stack on the render thread.
+        if (!component.isCompleted()) {
+            component.getFuture().thenAccept(completed -> {
+                MinecraftClient mc = MinecraftClient.getInstance();
+                if (mc != null) mc.execute(() -> {
+                    if (!drop.isRemoved() && !head.isEmpty()) {
+                        head.set(net.minecraft.component.DataComponentTypes.PROFILE, completed);
+                    }
+                });
+            });
+        }
         headDrops.add(new HeadDrop(world, drop, System.currentTimeMillis() + 2400L));
         // Restore both original Head sounds; Shear is an addition, not a replacement.
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
             SoundCategory.PLAYERS, 1.2f, 0.8f, false);
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_WITHER_SKELETON_DEATH,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z, SoundEvents.ENTITY_WITHER_SKELETON_DEATH,
             SoundCategory.PLAYERS, 0.9f, 1.2f, false);
         if (headShears.size() >= 6) headShears.remove(0);
         headShears.add(new HeadShear(world, System.currentTimeMillis() + 220L));
     }
 
     // ===== Effects =====
-    private static void trigger(EffectType type, ClientWorld world, Vec3d pos, long nowMs, UUID playerId, String playerName) {
+    private static void trigger(EffectType type, ClientWorld world, Vec3d pos, long nowMs, UUID playerId, String playerName, GameProfile playerProfile) {
         if (type == null) return;
 
         if (type == EffectType.THUNDER) spawnThunder(world, pos);
@@ -545,7 +598,7 @@ public final class KillEffect {
         else if (type == EffectType.EXPLOSION) spawnTnt(world, pos);
         else if (type == EffectType.ROSE) spawnCherryRose(world, pos, nowMs);
         else if (type == EffectType.FIREWORK) fireworkBursts.add(new FireworkBurst(pos, nowMs));
-        else if (type == EffectType.HEAD) spawnHead(world, pos, playerId, playerName);
+        else if (type == EffectType.HEAD) spawnHead(world, pos, playerId, playerName, playerProfile);
         else if (type == EffectType.SWORD) SwordKillEffect.spawn(world, pos, nowMs);
         else if (type == EffectType.SNOW) SnowKillEffect.spawn(world, pos, nowMs);
         else if (type == EffectType.NOTE) NoteKillEffect.spawn(world, nowMs);
@@ -590,7 +643,7 @@ public final class KillEffect {
         }
 
         SoundEvent s = soundOfByIdFallback("entity.enderman.teleport", SoundEvents.ENTITY_ENDERMAN_TELEPORT);
-        if (s != null) world.playSound(center.x, center.y, center.z, s, SoundCategory.PLAYERS, 1.15f, 0.62f, false);
+        if (s != null) KillEffectSounds.play(world,center.x, center.y, center.z, s, SoundCategory.PLAYERS, 1.15f, 0.62f, false);
     }
 
     private static void spawnFreeze(ClientWorld world, Vec3d pos) {
@@ -630,7 +683,7 @@ public final class KillEffect {
         }
 
         SoundEvent crack = soundOfByIdFallback("block.glass.break", SoundEvents.ENTITY_GENERIC_HURT);
-        if (crack != null) world.playSound(x, y, z, crack, SoundCategory.PLAYERS, 1.25f, 1.35f, false);
+        if (crack != null) KillEffectSounds.play(world,x, y, z, crack, SoundCategory.PLAYERS, 1.25f, 1.35f, false);
     }
 
     private static void spawnVoid(ClientWorld world, Vec3d pos, long nowMs) {
@@ -639,7 +692,7 @@ public final class KillEffect {
         voidBursts.put(id, new VoidBurst(id, center, nowMs, nowMs + VOID_DURATION_MS));
 
         SoundEvent s = soundOfByIdFallback("entity.enderman.stare", SoundEvents.ENTITY_ENDERMAN_TELEPORT);
-        if (s != null) world.playSound(center.x, center.y, center.z, s, SoundCategory.PLAYERS, 1.0f, 0.55f, false);
+        if (s != null) KillEffectSounds.play(world,center.x, center.y, center.z, s, SoundCategory.PLAYERS, 1.0f, 0.55f, false);
         emitVoidFrame(world, voidBursts.get(id), nowMs);
     }
 
@@ -699,7 +752,7 @@ public final class KillEffect {
             world.addParticle(ParticleTypes.PORTAL, c.x, c.y, c.z, Math.cos(a) * speed, vy, Math.sin(a) * speed);
         }
         SoundEvent s = soundOfByIdFallback("entity.enderman.teleport", SoundEvents.ENTITY_ENDERMAN_TELEPORT);
-        if (s != null) world.playSound(c.x, c.y, c.z, s, SoundCategory.PLAYERS, 1.2f, 0.82f, false);
+        if (s != null) KillEffectSounds.play(world,c.x, c.y, c.z, s, SoundCategory.PLAYERS, 1.2f, 0.82f, false);
     }
 
     private static void spawnRose(ClientWorld world, Vec3d pos) {
@@ -797,7 +850,7 @@ public final class KillEffect {
                 SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME
         );
         if (petals != null) {
-            world.playSound(x, y, z, petals, SoundCategory.PLAYERS, 1.15f, 1.08f, false);
+            KillEffectSounds.play(world,x, y, z, petals, SoundCategory.PLAYERS, 1.15f, 1.08f, false);
         }
 
         SoundEvent chime = soundOfByIdFallback(
@@ -805,7 +858,7 @@ public final class KillEffect {
                 SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME
         );
         if (chime != null) {
-            world.playSound(x, y, z, chime, SoundCategory.PLAYERS, 1.05f, 1.48f, false);
+            KillEffectSounds.play(world,x, y, z, chime, SoundCategory.PLAYERS, 1.05f, 1.48f, false);
         }
     }
 
@@ -865,7 +918,7 @@ public final class KillEffect {
 
         SoundEvent hit = soundOfByIdFallback("entity.player.attack.crit", SoundEvents.ENTITY_GENERIC_HURT);
         if (hit != null) {
-            world.playSound(x, y, z, hit, SoundCategory.PLAYERS, 1.1f, 0.78f, false);
+            KillEffectSounds.play(world,x, y, z, hit, SoundCategory.PLAYERS, 1.1f, 0.78f, false);
         }
     }
 
@@ -881,7 +934,7 @@ public final class KillEffect {
 
         SoundEvent boom = soundOfByIdFallback("entity.generic.explode", SoundEvents.ENTITY_GENERIC_EXPLODE);
         if (boom != null) {
-            world.playSound(x, y, z, boom, SoundCategory.PLAYERS, 1.0f, 1.0f, false);
+            KillEffectSounds.play(world,x, y, z, boom, SoundCategory.PLAYERS, 1.0f, 1.0f, false);
         }
     }
 
@@ -951,7 +1004,7 @@ public final class KillEffect {
 
         SoundEvent boom = soundOfByIdFallback("entity.generic.explode", SoundEvents.ENTITY_GENERIC_EXPLODE);
         if (boom != null) {
-            world.playSound(x, y, z, boom, SoundCategory.PLAYERS, 1.65f, 0.92f, false);
+            KillEffectSounds.play(world,x, y, z, boom, SoundCategory.PLAYERS, 1.65f, 0.92f, false);
         }
     }
 
@@ -982,12 +1035,12 @@ public final class KillEffect {
 
         SoundEvent s1 = soundOf(SoundEvents.ENTITY_LIGHTNING_BOLT_THUNDER);
         if (s1 != null) {
-            world.playSound(x, y, z, s1, SoundCategory.WEATHER, 2.0f, 1.0f, false);
+            KillEffectSounds.play(world,x, y, z, s1, SoundCategory.WEATHER, 2.0f, 1.0f, false);
         }
 
         SoundEvent s2 = soundOf(SoundEvents.ENTITY_LIGHTNING_BOLT_IMPACT);
         if (s2 != null) {
-            world.playSound(x, y, z, s2, SoundCategory.WEATHER, 2.0f, 1.0f, false);
+            KillEffectSounds.play(world,x, y, z, s2, SoundCategory.WEATHER, 2.0f, 1.0f, false);
         }
     }
 
@@ -1005,7 +1058,7 @@ public final class KillEffect {
 
         SoundEvent s = soundOf(SoundEvents.ITEM_TOTEM_USE);
         if (s != null) {
-            world.playSound(x, y, z, s, SoundCategory.PLAYERS, 1.0f, 1.0f, false);
+            KillEffectSounds.play(world,x, y, z, s, SoundCategory.PLAYERS, 1.0f, 1.0f, false);
         }
     }
 
@@ -1096,8 +1149,8 @@ public final class KillEffect {
 
         SoundEvent boom = soundOfByIdFallback("block.vault.break", SoundEvents.BLOCK_ANVIL_LAND);
         SoundEvent ding = soundOfByIdFallback("block.amethyst_cluster.break", SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME);
-        if (boom != null) playMaster(boom, 2.0f, 1.00f);
-        if (ding != null) playMaster(ding, 3.0f, 1.35f);
+        if (boom != null) KillEffectSounds.playMaster(boom, 2.0f, 1.00f);
+        if (ding != null) KillEffectSounds.playMaster(ding, 3.0f, 1.35f);
     }
 
     private static void spawnPotionDrop(ClientWorld world, Vec3d targetPos, long nowMs) {
@@ -1200,12 +1253,12 @@ public final class KillEffect {
 
         SoundEvent beacon = soundOfByIdFallback("block.beacon.activate", SoundEvents.BLOCK_BEACON_ACTIVATE);
         if (beacon != null) {
-            world.playSound(x, y, z, beacon, SoundCategory.PLAYERS, 1.15f, 1.00f, false);
+            KillEffectSounds.play(world,x, y, z, beacon, SoundCategory.PLAYERS, 1.15f, 1.00f, false);
         }
 
         SoundEvent brk = soundOfByIdFallback("entity.splash_potion.break", SoundEvents.ENTITY_GENERIC_SPLASH);
         if (brk != null) {
-            world.playSound(x, y, z, brk, SoundCategory.PLAYERS, 1.0f, 1.0f, false);
+            KillEffectSounds.play(world,x, y, z, brk, SoundCategory.PLAYERS, 1.0f, 1.0f, false);
         }
     }
 
@@ -1271,7 +1324,7 @@ public final class KillEffect {
                 "minecraft:entity.skeleton.converted_to_stray",
                 SoundEvents.ENTITY_SKELETON_AMBIENT
         );
-        if (sfx != null) playMaster(sfx, 1.25f, 1.00f);
+        if (sfx != null) KillEffectSounds.playMaster(sfx, 1.25f, 1.00f);
 
         emitGlitchFrame(world, gb, nowMs);
     }
@@ -1473,6 +1526,9 @@ public final class KillEffect {
                     EffectType parsed = EffectType.parse(obj.get("effect").getAsString());
                     if (parsed != null) effect = parsed;
                 }
+                if (obj.has("soundVolume")) {
+                    soundVolume = MathHelper.clamp(obj.get("soundVolume").getAsInt(), 0, 200);
+                }
             }
         } catch (Throwable ignored) {}
     }
@@ -1482,6 +1538,7 @@ public final class KillEffect {
             JsonObject obj = new JsonObject();
             obj.addProperty("enabled", enabled);
             obj.addProperty("effect", (effect != null) ? effect.id() : "thunder");
+            obj.addProperty("soundVolume", soundVolume);
 
             try (BufferedWriter bw = Files.newBufferedWriter(CONFIG_PATH, StandardCharsets.UTF_8)) {
                 GSON.toJson(obj, bw);
@@ -1582,30 +1639,5 @@ public final class KillEffect {
         return null;
     }
 
-    private static void playMaster(SoundEvent sound, float volume, float pitch) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null) return;
 
-        try {
-            mc.getSoundManager().play(PositionedSoundInstance.master(sound, pitch, volume));
-        } catch (Throwable ignored) {
-            try {
-                if (mc.world != null) {
-                    Vec3d p = (mc.player != null)
-                            ? mc.player.getPos()
-                            : new Vec3d(0, 0, 0);
-                    mc.world.playSound(
-                            p.x,
-                            p.y,
-                            p.z,
-                            sound,
-                            SoundCategory.MASTER,
-                            volume,
-                            pitch,
-                            false
-                    );
-                }
-            } catch (Throwable ignored2) {}
-        }
-    }
 }
