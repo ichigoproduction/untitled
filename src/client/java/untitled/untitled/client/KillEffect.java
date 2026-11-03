@@ -321,6 +321,7 @@ public final class KillEffect {
         tickPotionDrops(world, nowMs);
         tickFireworks(world, nowMs);
         tickHeadDrops(world, nowMs);
+        tickRoseChimes(world, nowMs);
         SwordKillEffect.tick(world, nowMs);
         SnowKillEffect.tick(world, nowMs);
         NoteKillEffect.tick(world, nowMs);
@@ -408,7 +409,41 @@ public final class KillEffect {
         }
     }
 
-    private static void spawnCherryRose(ClientWorld world, Vec3d pos) {
+    // Quiet, staggered flute/chime phrases accompany sakura petals without the
+    // aggressive level-up jingle used by the previous Rose effect.
+    private static final java.util.List<RoseChime> roseChimes = new java.util.ArrayList<>();
+    private static final class RoseChime {
+        final ClientWorld world;
+        final Vec3d pos;
+        final long playAt;
+
+        RoseChime(ClientWorld world, Vec3d pos, long playAt) {
+            this.world = world;
+            this.pos = pos;
+            this.playAt = playAt;
+        }
+    }
+
+    private static void tickRoseChimes(ClientWorld world, long nowMs) {
+        Iterator<RoseChime> it = roseChimes.iterator();
+        while (it.hasNext()) {
+            RoseChime chime = it.next();
+            if (chime.world != world) {
+                it.remove();
+                continue;
+            }
+            if (nowMs < chime.playAt) continue;
+            SoundEvent flute = soundOfByIdFallback("block.note_block.flute", SoundEvents.BLOCK_NOTE_BLOCK_FLUTE);
+            SoundEvent sparkle = soundOfByIdFallback("block.amethyst_block.chime", SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME);
+            if (flute != null) world.playSound(chime.pos.x, chime.pos.y, chime.pos.z,
+                    flute, SoundCategory.PLAYERS, 0.38f, 1.52f, false);
+            if (sparkle != null) world.playSound(chime.pos.x, chime.pos.y, chime.pos.z,
+                    sparkle, SoundCategory.PLAYERS, 0.33f, 1.45f, false);
+            it.remove();
+        }
+    }
+
+    private static void spawnCherryRose(ClientWorld world, Vec3d pos, long nowMs) {
         java.util.Random random = new java.util.Random();
         for (int i = 0; i < 48; i++) {
             double a = random.nextDouble() * Math.PI * 2;
@@ -418,10 +453,15 @@ public final class KillEffect {
                 pos.z + Math.sin(a)*radius, -Math.sin(a)*0.025,
                 -0.035-random.nextDouble()*0.055, Math.cos(a)*0.025);
         }
-        world.playSound(pos.x,pos.y,pos.z, SoundEvents.BLOCK_CHERRY_LEAVES_BREAK,
-            SoundCategory.PLAYERS, 1.0f, 1.4f, false);
-        world.playSound(pos.x,pos.y,pos.z, SoundEvents.ENTITY_PLAYER_LEVELUP,
-            SoundCategory.PLAYERS, 1.2f, 1.65f, false);
+        // Soft cherry-leaf rustle and a gentle Japanese-garden-inspired flute.
+        SoundEvent leaves = soundOfByIdFallback("block.cherry_leaves.break", SoundEvents.BLOCK_CHERRY_LEAVES_BREAK);
+        SoundEvent flute = soundOfByIdFallback("block.note_block.flute", SoundEvents.BLOCK_NOTE_BLOCK_FLUTE);
+        if (leaves != null) world.playSound(pos.x, pos.y, pos.z,
+                leaves, SoundCategory.PLAYERS, 0.62f, 1.15f, false);
+        if (flute != null) world.playSound(pos.x, pos.y, pos.z,
+                flute, SoundCategory.PLAYERS, 0.50f, 1.18f, false);
+        if (roseChimes.size() >= 6) roseChimes.remove(0);
+        roseChimes.add(new RoseChime(world, pos, nowMs + 260L));
     }
 
     private static final java.util.List<HeadDrop> headDrops = new java.util.ArrayList<>();
@@ -472,7 +512,7 @@ public final class KillEffect {
         else if (type == EffectType.POTION) spawnPotionDrop(world, pos, nowMs);
         else if (type == EffectType.SOUL) spawnSoul(world, pos, nowMs);
         else if (type == EffectType.EXPLOSION) spawnTnt(world, pos);
-        else if (type == EffectType.ROSE) spawnCherryRose(world, pos);
+        else if (type == EffectType.ROSE) spawnCherryRose(world, pos, nowMs);
         else if (type == EffectType.FIREWORK) fireworkBursts.add(new FireworkBurst(pos, nowMs));
         else if (type == EffectType.HEAD) spawnHead(world, pos, playerId, playerName);
         else if (type == EffectType.SWORD) SwordKillEffect.spawn(world, pos, nowMs);
