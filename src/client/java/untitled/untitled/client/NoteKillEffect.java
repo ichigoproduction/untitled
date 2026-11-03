@@ -3,7 +3,9 @@ package untitled.untitled.client;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.Vec3d;
 
@@ -81,12 +83,12 @@ public final class NoteKillEffect {
                         burst.played[phrase][note] = true;
                         // Repeated, quickly rising notes with a slightly longer ringing finish.
                         world.playSound(mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
-                                SoundEvents.BLOCK_NOTE_BLOCK_PLING, SoundCategory.PLAYERS,
+                                resolveSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING), SoundCategory.PLAYERS,
                                 note == PITCHES.length - 1 ? 1.0f : 0.65f,
                                 PITCHES[note], false);
                         if (note == PITCHES.length - 1) {
                             world.playSound(mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
-                                    SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.PLAYERS,
+                                    resolveSound(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME), SoundCategory.PLAYERS,
                                     0.40f, 1.50f, false);
                         }
                     }
@@ -94,4 +96,12 @@ public final class NoteKillEffect {
             }
         }
     }
+    // In 1.21.4 SoundEvents fields can be RegistryEntry<SoundEvent> or SoundEvent.
+    // ClientWorld.playSound(x, y, z, ...) needs the unwrapped SoundEvent.
+    private static SoundEvent resolveSound(Object sound) {
+        if (sound instanceof SoundEvent event) return event;
+        if (sound instanceof RegistryEntry<?> entry && entry.value() instanceof SoundEvent event) return event;
+        throw new IllegalArgumentException("Unknown sound event type: " + sound);
+    }
+
 }
