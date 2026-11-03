@@ -31,7 +31,7 @@ public final class AutoUpdateScreen extends Screen {
     @Override public void render(DrawContext ctx, int mx, int my, float delta) {
         super.render(ctx,mx,my,delta);
         ctx.drawCenteredTextWithShadow(textRenderer,"Auto Update",width/2,18,0xFFFFFF);
-        ctx.drawCenteredTextWithShadow(textRenderer,"version : " + AutoUpdater.installedVersion(),width/2,128,0xAAAAAA);
+        ctx.drawCenteredTextWithShadow(textRenderer,"v" + AutoUpdater.installedVersion(),width/2,128,0xAAAAAA);
     }
     @Override public void close() { client.setScreen(parent); }
 }
