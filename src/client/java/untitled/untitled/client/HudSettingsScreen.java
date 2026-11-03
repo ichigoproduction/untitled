@@ -8,7 +8,7 @@ import java.util.List;
 
 /** English vanilla-style HUD configuration, also opened by /152. */
 public final class HudSettingsScreen extends Screen {
-    private static final String[] NAMES = {"HUD Position", "Food HUD", "Drink HUD", "Syringe HUD", "Skill HUD", "Title HUD"};
+    private static final String[] NAMES = {"Hud Position", "Food Hud", "Drink Hud", "Syringe Hud", "Skill Hud", "Title Hud"};
     private static final int W = 150, H = 20, GAP = 10;
     private final Screen parent;
     private final int category;
@@ -31,7 +31,7 @@ public final class HudSettingsScreen extends Screen {
                 addButton(NAMES[i], left, 48 + i * 25,
                     () -> client.setScreen(new HudSettingsScreen(parent, target)));
             }
-            addButton("Party HUD", left + W + GAP, 48,
+            addButton("Party Hud", left + W + GAP, 48,
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Party HUD")));
             addButton("Item Model", left + W + GAP, 73,
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Item Model")));
@@ -43,7 +43,7 @@ public final class HudSettingsScreen extends Screen {
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Optimizer")));
             addButton("Kill Effect", left + W + GAP, 173,
                 () -> client.setScreen(new AdditionalSettingsScreen(this, "Kill Effect")));
-            addButton("Auto Update", left + W + GAP, 198,
+            addButton("Auto Update", width - W - 10, height - 28,
                 () -> client.setScreen(new AutoUpdateScreen(this)));
         } else {
             buildDetails(left);
