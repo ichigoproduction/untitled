@@ -151,17 +151,17 @@ public final class AdditionalSettingsScreen extends Screen {
                 // Sound gain is exclusive to 152 kill effects; 100% preserves original loudness.
                 addDrawableChild(new SliderWidget(
                         l, y + 55, 310, 20,
-                        Text.literal("Kill Effect Volume: " + KillEffect.settingsSoundVolume() + "%"),
-                        KillEffect.settingsSoundVolume() / 200.0) {
+                        Text.literal("Volume: " + KillEffect.settingsSoundVolume() + "%"),
+                        KillEffect.settingsSoundVolume() / 300.0) {
                     @Override
                     protected void updateMessage() {
-                        setMessage(Text.literal("Kill Effect Volume: " +
-                                Math.round(value * 200.0) + "%"));
+                        setMessage(Text.literal("Volume: " +
+                                Math.round(value * 300.0) + "%"));
                     }
 
                     @Override
                     protected void applyValue() {
-                        KillEffect.settingsSetSoundVolume((int) Math.round(value * 200.0));
+                        KillEffect.settingsSetSoundVolume((int) Math.round(value * 300.0));
                         updateMessage();
                     }
                 });
