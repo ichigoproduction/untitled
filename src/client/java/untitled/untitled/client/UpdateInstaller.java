@@ -1,6 +1,7 @@
 package untitled.untitled.client;
 
 import java.nio.file.*;
+import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 /** Separate JVM; installs a version-named JAR only after Minecraft exits. */
@@ -41,12 +42,13 @@ public final class UpdateInstaller {
             throw new FileAlreadyExistsException("Refusing to overwrite existing update: " + destination);
         }
         Path backup = original.resolveSibling(original.getFileName() + ".152-backup-" + System.currentTimeMillis());
+        System.out.println("Waiting for file access: " + original);
         Path local = Files.createTempFile(original.getParent(), ".152-update-", ".tmp");
         boolean backedUp = false;
         try {
             Files.copy(staged, local, StandardCopyOption.REPLACE_EXISTING);
             // Keep previous version in a non-.jar backup to prevent Fabric loading both.
-            Files.move(original, backup);
+            moveWhenUnlocked(original, backup);
             backedUp = true;
             try {
                 try {
@@ -68,6 +70,30 @@ public final class UpdateInstaller {
                 try {
                     if (!Files.exists(original)) Files.move(backup, original);
                 } catch (Exception ignored) { }
+            }
+        }
+    }
+
+    /**
+     * Windows launchers can retain a JAR handle after the Minecraft JVM exits.
+     * Retry only sharing/IO failures; never overwrite a destination or bypass locks.
+     */
+    private static void moveWhenUnlocked(Path original, Path backup) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+        int attempts = 0;
+        while (true) {
+            if (Files.exists(backup)) throw new FileAlreadyExistsException(backup.toString());
+            try {
+                Files.move(original, backup);
+                System.out.println("Backup created after " + attempts + " retries: " + backup);
+                return;
+            } catch (FileSystemException e) {
+                if (System.nanoTime() >= deadline) {
+                    System.err.println("Timed out waiting for JAR unlock: " + original);
+                    throw e;
+                }
+                if (attempts++ % 10 == 0) System.out.println("JAR still locked, retrying: " + e.getMessage());
+                Thread.sleep(1000);
             }
         }
     }
