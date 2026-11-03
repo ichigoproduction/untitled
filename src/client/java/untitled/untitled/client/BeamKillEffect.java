@@ -118,7 +118,19 @@ public final class BeamKillEffect {
         Iterator<Beam> iterator = ACTIVE.iterator();
         while (iterator.hasNext()) {
             Beam beam = iterator.next();
-            if (beam.world != world || nowMs >= beam.expiresAt) iterator.remove();
+            if (beam.world != world) {
+                iterator.remove();
+                continue;
+            }
+            if (nowMs >= beam.expiresAt) {
+                // Play Beacon Deactivate exactly once as the three-second beam vanishes.
+                world.playSound(beam.position.getX() + 0.5,
+                        beam.position.getY() + 0.5,
+                        beam.position.getZ() + 0.5,
+                        resolveSound(SoundEvents.BLOCK_BEACON_DEACTIVATE),
+                        SoundCategory.PLAYERS, 0.88f, 1.10f, false);
+                iterator.remove();
+            }
         }
     }
 
