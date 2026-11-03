@@ -1,0 +1,2 @@
+# Paste the Base64 X.509 SubjectPublicKeyInfo Ed25519 public key generated locally by tools/sign_update.py keygen.
+# Until replaced, unsigned or signed manifests are rejected.
