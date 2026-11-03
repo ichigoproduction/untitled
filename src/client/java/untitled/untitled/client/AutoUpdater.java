@@ -155,7 +155,13 @@ public final class AutoUpdater {
                     Long.toString(ProcessHandle.current().pid()), old.toString(), staged.toString())
                     .redirectOutput(ProcessBuilder.Redirect.appendTo(STAGING.resolve("install.log").toFile()))
                     .redirectErrorStream(true).start();
-            } catch(Exception ignored) {}
+            } catch(Exception e) {
+                try {
+                    Files.createDirectories(STAGING);
+                    Files.writeString(STAGING.resolve("install.log"), "Shutdown helper launch failed: " + e + System.lineSeparator(),
+                        java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+                } catch (Exception ignored) { }
+            }
         }, "152-update-shutdown"));
     }
 }
