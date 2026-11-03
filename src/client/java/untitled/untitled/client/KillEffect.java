@@ -112,12 +112,13 @@ public final class KillEffect {
     private static int glitchSeq = 1;
 
     private enum EffectType {
-        THUNDER, TOTEM, SOUL, EXPLOSION, WING, POTION, ROSE, FIREWORK, HEAD, SWORD, SNOW, NOTE, BEAM, GLASS;
+        THUNDER, TOTEM, SOUL, EXPLOSION, WING, POTION, ROSE, FIREWORK, HEAD, SWORD, SNOW, NOTE, BEAM, WATER;
         static EffectType parse(String s) {
             if (s == null) return null;
             String q = s.trim().toLowerCase(java.util.Locale.ROOT);
             if (q.equals("glitch")) return SOUL;
             if (q.equals("tnt")) return EXPLOSION;
+            if (q.equals("glass")) return WATER; // Upgrade existing saved effect selection.
             try { return EffectType.valueOf(q.toUpperCase(java.util.Locale.ROOT)); }
             catch (IllegalArgumentException e) { return null; }
         }
@@ -326,7 +327,7 @@ public final class KillEffect {
         SnowKillEffect.tick(world, nowMs);
         NoteKillEffect.tick(world, nowMs);
         BeamKillEffect.tick(world, nowMs);
-        GlassKillEffect.tick(world, nowMs);
+        WaterKillEffect.tick(world, nowMs);
 
         if (tracks.isEmpty()) return;
 
@@ -433,12 +434,10 @@ public final class KillEffect {
                 continue;
             }
             if (nowMs < chime.playAt) continue;
-            SoundEvent flute = soundOfByIdFallback("block.note_block.flute", SoundEvents.BLOCK_NOTE_BLOCK_FLUTE);
-            SoundEvent sparkle = soundOfByIdFallback("block.amethyst_block.chime", SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME);
-            if (flute != null) world.playSound(chime.pos.x, chime.pos.y, chime.pos.z,
-                    flute, SoundCategory.PLAYERS, 0.38f, 1.52f, false);
-            if (sparkle != null) world.playSound(chime.pos.x, chime.pos.y, chime.pos.z,
-                    sparkle, SoundCategory.PLAYERS, 0.33f, 1.45f, false);
+            // Soft ethereal aftertone rather than the previous flute melody.
+            SoundEvent shimmer = soundOfByIdFallback("block.amethyst_block.chime", SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME);
+            if (shimmer != null) world.playSound(chime.pos.x, chime.pos.y, chime.pos.z,
+                    shimmer, SoundCategory.PLAYERS, 0.52f, 0.90f, false);
             it.remove();
         }
     }
@@ -453,15 +452,15 @@ public final class KillEffect {
                 pos.z + Math.sin(a)*radius, -Math.sin(a)*0.025,
                 -0.035-random.nextDouble()*0.055, Math.cos(a)*0.025);
         }
-        // Soft cherry-leaf rustle and a gentle Japanese-garden-inspired flute.
+        // Soul-like magical whoosh with a gentle blossom rustle, not a cheerful instrument.
         SoundEvent leaves = soundOfByIdFallback("block.cherry_leaves.break", SoundEvents.BLOCK_CHERRY_LEAVES_BREAK);
-        SoundEvent flute = soundOfByIdFallback("block.note_block.flute", SoundEvents.BLOCK_NOTE_BLOCK_FLUTE);
+        SoundEvent spirit = soundOfByIdFallback("entity.enderman.teleport", SoundEvents.ENTITY_ENDERMAN_TELEPORT);
         if (leaves != null) world.playSound(pos.x, pos.y, pos.z,
-                leaves, SoundCategory.PLAYERS, 0.62f, 1.15f, false);
-        if (flute != null) world.playSound(pos.x, pos.y, pos.z,
-                flute, SoundCategory.PLAYERS, 0.50f, 1.18f, false);
+                leaves, SoundCategory.PLAYERS, 0.32f, 0.95f, false);
+        if (spirit != null) world.playSound(pos.x, pos.y, pos.z,
+                spirit, SoundCategory.PLAYERS, 0.55f, 1.45f, false);
         if (roseChimes.size() >= 6) roseChimes.remove(0);
-        roseChimes.add(new RoseChime(world, pos, nowMs + 260L));
+        roseChimes.add(new RoseChime(world, pos, nowMs + 280L));
     }
 
     private static final java.util.List<HeadDrop> headDrops = new java.util.ArrayList<>();
@@ -496,6 +495,9 @@ public final class KillEffect {
         drop.setPickupDelayInfinite();
         world.addEntity(drop);
         headDrops.add(new HeadDrop(world, drop, System.currentTimeMillis() + 2400L));
+        SoundEvent shear = soundOfByIdFallback("entity.sheep.shear", SoundEvents.ENTITY_SHEEP_SHEAR);
+        if (shear != null) world.playSound(pos.x, pos.y, pos.z,
+                shear, SoundCategory.PLAYERS, 0.90f, 1.07f, false);
         world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
             SoundCategory.PLAYERS, 1.2f, 0.8f, false);
         world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_WITHER_SKELETON_DEATH,
@@ -519,7 +521,7 @@ public final class KillEffect {
         else if (type == EffectType.SNOW) SnowKillEffect.spawn(world, pos, nowMs);
         else if (type == EffectType.NOTE) NoteKillEffect.spawn(world, nowMs);
         else if (type == EffectType.BEAM) BeamKillEffect.spawn(world, pos, nowMs);
-        else if (type == EffectType.GLASS) GlassKillEffect.spawn(world, pos, nowMs);
+        else if (type == EffectType.WATER) WaterKillEffect.spawn(world, pos, nowMs);
     }
 
     private static void spawnEnder(ClientWorld world, Vec3d pos) {
@@ -1009,21 +1011,6 @@ public final class KillEffect {
         final double backMax = 0.22;
 
         for (int i = 0; i < 10; i++) {
-            double jx = (Math.random() - 0.5) * 0.10;
-            double jy = Math.random() * 0.18;
-            double jz = (Math.random() - 0.5) * 0.10;
-            world.addParticle(
-                    ParticleTypes.END_ROD,
-                    base.x + jx,
-                    base.y + jy,
-                    base.z + jz,
-                    (Math.random() - 0.5) * 0.02,
-                    0.03 + Math.random() * 0.03,
-                    (Math.random() - 0.5) * 0.02
-            );
-        }
-
-        for (int i = 0; i < 10; i++) {
             double jx = (Math.random() - 0.5) * 0.12;
             double jy = Math.random() * 0.20;
             double jz = (Math.random() - 0.5) * 0.12;
@@ -1075,17 +1062,6 @@ public final class KillEffect {
                         vel.z
                 );
 
-                if (i % 12 == 0) {
-                    world.addParticle(
-                            ParticleTypes.END_ROD,
-                            p.x,
-                            p.y,
-                            p.z,
-                            vel.x * 0.35,
-                            vel.y * 0.35,
-                            vel.z * 0.35
-                    );
-                }
             }
         }
 
