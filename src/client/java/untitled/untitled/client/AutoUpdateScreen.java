@@ -49,7 +49,7 @@ public final class AutoUpdateScreen extends Screen {
             } else if (AutoUpdater.hasUpdate()) {
                 checkLabel = "Available: v" + AutoUpdater.availableVersion();
             } else if (status.startsWith("Up to date")) {
-                checkLabel = "Up to Date";
+                checkLabel = "No Updates Available";
             }
         }
         checkButton.setMessage(Text.literal(checkLabel));
