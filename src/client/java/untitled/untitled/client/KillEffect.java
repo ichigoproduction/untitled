@@ -570,8 +570,14 @@ public final class KillEffect {
             component.getFuture().thenAccept(completed -> {
                 MinecraftClient mc = MinecraftClient.getInstance();
                 if (mc != null) mc.execute(() -> {
-                    if (!drop.isRemoved() && !head.isEmpty()) {
-                        head.set(net.minecraft.component.DataComponentTypes.PROFILE, completed);
+                    if (!drop.isRemoved()) {
+                        // ItemEntity may store its own stack instance. Update the
+                        // actual rendered stack, not only the original local variable.
+                        ItemStack rendered = drop.getStack().copy();
+                        if (!rendered.isEmpty()) {
+                            rendered.set(net.minecraft.component.DataComponentTypes.PROFILE, completed);
+                            drop.setStack(rendered);
+                        }
                     }
                 });
             });
