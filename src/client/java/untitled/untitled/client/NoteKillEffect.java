@@ -82,12 +82,12 @@ public final class NoteKillEffect {
                     if (!burst.played[phrase][note] && age >= due) {
                         burst.played[phrase][note] = true;
                         // Sparkly, rising bell notes in a brighter register, repeated twice.
-                        world.playSound(mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
+                        KillEffectSounds.play(world,mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
                                 resolveSound(SoundEvents.BLOCK_NOTE_BLOCK_BELL), SoundCategory.PLAYERS,
                                 note == PITCHES.length - 1 ? 0.88f : 0.55f,
                                 PITCHES[note], false);
                         if (note == PITCHES.length - 1) {
-                            world.playSound(mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
+                            KillEffectSounds.play(world,mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
                                     resolveSound(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME), SoundCategory.PLAYERS,
                                     0.28f, 1.68f, false);
                         }
