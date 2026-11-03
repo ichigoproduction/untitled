@@ -21,8 +21,7 @@ public final class UpdateInstaller {
             if (System.nanoTime() > end) return;
             Thread.sleep(500);
         }
-        Path backup = original.resolveSibling(original.getFileName() + ".152-backup");
-        if (Files.exists(backup)) return; // Existing backup requires manual resolution.
+        Path backup = original.resolveSibling(original.getFileName() + ".152-backup-" + System.currentTimeMillis());
         Files.copy(original, backup);
         try {
             // Stage alongside the target so the final replacement is on the same filesystem.
