@@ -3,6 +3,7 @@ package untitled.untitled.client;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 import java.util.List;
@@ -147,6 +148,23 @@ public final class AdditionalSettingsScreen extends Screen {
                     () -> client.setScreen(new ModelSelectionScreen(this, "Select Kill Effect",
                         KillEffect.settingsEffects(), KillEffect::setSettingsEffect)));
                 button("Preview Effect", l, y + 25, KillEffect::previewSettings);
+                // Sound gain is exclusive to 152 kill effects; 100% preserves original loudness.
+                addDrawableChild(new SliderWidget(
+                        l, y + 55, 310, 20,
+                        Text.literal("Kill Effect Volume: " + KillEffect.settingsSoundVolume() + "%"),
+                        KillEffect.settingsSoundVolume() / 200.0) {
+                    @Override
+                    protected void updateMessage() {
+                        setMessage(Text.literal("Kill Effect Volume: " +
+                                Math.round(value * 200.0) + "%"));
+                    }
+
+                    @Override
+                    protected void applyValue() {
+                        KillEffect.settingsSetSoundVolume((int) Math.round(value * 200.0));
+                        updateMessage();
+                    }
+                });
             }
             case "Optimizer" -> {
                 button("Enabled: "+(Optimizer.isEnabled()?"ON":"OFF"),l,y,()->{
