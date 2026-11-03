@@ -151,7 +151,9 @@ public final class AutoUpdater {
                 if (!Files.isRegularFile(old) || !old.toString().endsWith(".jar")) return;
                 Path javaExecutable = Path.of(System.getProperty("java.home"), "bin", System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win") ? "java.exe" : "java").toAbsolutePath();
                 if (!Files.isRegularFile(javaExecutable)) return;
-                new ProcessBuilder(javaExecutable.toString(), "-cp", old.toString(), "untitled.untitled.client.UpdateInstaller",
+                Path helperJar = STAGING.resolve("installer-helper.jar");
+                Files.copy(old, helperJar, StandardCopyOption.REPLACE_EXISTING);
+                new ProcessBuilder(javaExecutable.toString(), "-cp", helperJar.toString(), "untitled.untitled.client.UpdateInstaller",
                     Long.toString(ProcessHandle.current().pid()), old.toString(), staged.toString())
                     .redirectOutput(ProcessBuilder.Redirect.appendTo(STAGING.resolve("install.log").toFile()))
                     .redirectErrorStream(true).start();
