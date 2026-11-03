@@ -148,7 +148,7 @@ public final class AutoUpdater {
                 if (paths.size()!=1) return;
                 Path old = paths.get(0).toAbsolutePath().normalize();
                 if (!Files.isRegularFile(old) || !old.toString().endsWith(".jar")) return;
-                Path java = Path.of(System.getProperty("java.home"), "bin", "java").toAbsolutePath();
+                Path java = Path.of(System.getProperty("java.home"), "bin", System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win") ? "java.exe" : "java").toAbsolutePath();
                 if (!Files.isRegularFile(java)) return;
                 new ProcessBuilder(java.toString(), "-cp", old.toString(), "untitled.untitled.client.UpdateInstaller",
                     Long.toString(ProcessHandle.current().pid()), old.toString(), staged.toString())
