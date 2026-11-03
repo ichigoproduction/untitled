@@ -72,7 +72,7 @@ public final class WaterKillEffect {
         if (world == null || victimPosition == null) return;
 
         Vec3d center = victimPosition.add(0, 1.05, 0);
-        world.playSound(center.x, center.y, center.z,
+        KillEffectSounds.play(world,center.x, center.y, center.z,
                 resolveSound(SoundEvents.ENTITY_GENERIC_SPLASH),
                 SoundCategory.PLAYERS, 0.90f, 1.20f, false);
 
@@ -154,7 +154,7 @@ public final class WaterKillEffect {
         PUDDLES.add(new Puddle(world, pos.add(0, 0.035, 0),
                 0.20 + RANDOM.nextDouble() * 0.30, nowMs + PUDDLE_DURATION_MS));
         if (RANDOM.nextInt(7) == 0) {
-            world.playSound(pos.x, pos.y, pos.z,
+            KillEffectSounds.play(world,pos.x, pos.y, pos.z,
                     resolveSound(SoundEvents.BLOCK_BUBBLE_COLUMN_BUBBLE_POP),
                     SoundCategory.PLAYERS, 0.26f, 1.23f, false);
         }
