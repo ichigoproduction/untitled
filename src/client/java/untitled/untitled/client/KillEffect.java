@@ -495,13 +495,13 @@ public final class KillEffect {
         drop.setPickupDelayInfinite();
         world.addEntity(drop);
         headDrops.add(new HeadDrop(world, drop, System.currentTimeMillis() + 2400L));
+        // This short metallic snip must be distinct and audible to the killer.
+        // Play it directly through the local sound manager, without positional
+        // attenuation or the old loud wither-death sound masking the snip.
         SoundEvent shear = soundOfByIdFallback("entity.sheep.shear", SoundEvents.ENTITY_SHEEP_SHEAR);
-        if (shear != null) world.playSound(pos.x, pos.y, pos.z,
-                shear, SoundCategory.PLAYERS, 0.90f, 1.07f, false);
+        if (shear != null) playMaster(shear, 1.15f, 1.0f);
         world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
-            SoundCategory.PLAYERS, 1.2f, 0.8f, false);
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_WITHER_SKELETON_DEATH,
-            SoundCategory.PLAYERS, 0.9f, 1.2f, false);
+            SoundCategory.PLAYERS, 0.30f, 0.9f, false);
     }
 
     // ===== Effects =====
