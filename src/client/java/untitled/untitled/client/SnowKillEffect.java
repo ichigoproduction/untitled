@@ -70,7 +70,7 @@ public final class SnowKillEffect {
     public static void spawn(ClientWorld world, Vec3d killedPlayerPos, long nowMs) {
         if (world == null || killedPlayerPos == null) return;
         Vec3d origin = killedPlayerPos.add(0, 1.05, 0);
-        world.playSound(origin.x, origin.y, origin.z,
+        KillEffectSounds.play(world,origin.x, origin.y, origin.z,
                 resolveSound(SoundEvents.ENTITY_SNOWBALL_THROW), SoundCategory.PLAYERS, 0.9f, 0.90f, false);
 
         for (int i = 0; i < SNOWBALLS_PER_BURST; i++) {
@@ -177,7 +177,7 @@ public final class SnowKillEffect {
 
         // Avoid playing dozens of loud overlapping sounds.
         if (RANDOM.nextInt(7) == 0) {
-            world.playSound(hitPos.x, hitPos.y, hitPos.z,
+            KillEffectSounds.play(world,hitPos.x, hitPos.y, hitPos.z,
                     resolveSound(SoundEvents.BLOCK_SNOW_HIT), SoundCategory.PLAYERS, 0.25f, 1.10f, false);
         }
     }
