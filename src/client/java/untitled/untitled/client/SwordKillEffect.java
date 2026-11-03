@@ -3,7 +3,9 @@ package untitled.untitled.client;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.particle.DustParticleEffect;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.sound.SoundCategory;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.math.Vec3d;
 
@@ -119,6 +121,9 @@ public final class SwordKillEffect {
     }
 
     private static void impact(ClientWorld world, Vec3d pos) {
+        // Trident Loyalty return whoosh layered under the anvil impact.
+        world.playSound(pos.x, pos.y, pos.z, resolveSound(SoundEvents.ITEM_TRIDENT_RETURN),
+            SoundCategory.PLAYERS, 0.95f, 1.08f, false);
         // Deep anvil clang, followed by a quiet metallic shimmer and ground sparks.
         world.playSound(pos.x, pos.y, pos.z, SoundEvents.BLOCK_ANVIL_LAND,
             SoundCategory.PLAYERS, 1.3f, 1.07f, false);
@@ -142,4 +147,10 @@ public final class SwordKillEffect {
                 Math.cos(a)*0.20, 0.10 + Math.random()*0.13, Math.sin(a)*0.20);
         }
     }
+    private static SoundEvent resolveSound(Object sound) {
+        if (sound instanceof SoundEvent event) return event;
+        if (sound instanceof RegistryEntry<?> entry && entry.value() instanceof SoundEvent event) return event;
+        throw new IllegalArgumentException("Unknown sound event type: " + sound);
+    }
+
 }
