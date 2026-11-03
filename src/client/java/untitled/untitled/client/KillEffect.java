@@ -322,6 +322,7 @@ public final class KillEffect {
         tickPotionDrops(world, nowMs);
         tickFireworks(world, nowMs);
         tickHeadDrops(world, nowMs);
+        tickHeadShears(world, nowMs);
         tickRoseChimes(world, nowMs);
         SwordKillEffect.tick(world, nowMs);
         SnowKillEffect.tick(world, nowMs);
@@ -482,6 +483,34 @@ public final class KillEffect {
             }
         }
     }
+    // Keep Head's original attack and death sounds intact. The added Shear
+    // is played a little later so it remains distinct without replacing them.
+    private static final java.util.List<HeadShear> headShears = new java.util.ArrayList<>();
+    private static final class HeadShear {
+        final ClientWorld world;
+        final long playAt;
+
+        HeadShear(ClientWorld world, long playAt) {
+            this.world = world;
+            this.playAt = playAt;
+        }
+    }
+
+    private static void tickHeadShears(ClientWorld world, long nowMs) {
+        Iterator<HeadShear> it = headShears.iterator();
+        while (it.hasNext()) {
+            HeadShear pending = it.next();
+            if (pending.world != world) {
+                it.remove();
+                continue;
+            }
+            if (nowMs < pending.playAt) continue;
+            SoundEvent shear = soundOfByIdFallback("entity.sheep.shear", SoundEvents.ENTITY_SHEEP_SHEAR);
+            if (shear != null) playMaster(shear, 0.95f, 1.0f);
+            it.remove();
+        }
+    }
+
     private static void spawnHead(ClientWorld world, Vec3d pos, UUID uuid, String name) {
         ItemStack head = new ItemStack(Items.PLAYER_HEAD);
         if (uuid != null && name != null) {
@@ -495,13 +524,13 @@ public final class KillEffect {
         drop.setPickupDelayInfinite();
         world.addEntity(drop);
         headDrops.add(new HeadDrop(world, drop, System.currentTimeMillis() + 2400L));
-        // This short metallic snip must be distinct and audible to the killer.
-        // Play it directly through the local sound manager, without positional
-        // attenuation or the old loud wither-death sound masking the snip.
-        SoundEvent shear = soundOfByIdFallback("entity.sheep.shear", SoundEvents.ENTITY_SHEEP_SHEAR);
-        if (shear != null) playMaster(shear, 1.15f, 1.0f);
+        // Restore both original Head sounds; Shear is an addition, not a replacement.
         world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
-            SoundCategory.PLAYERS, 0.30f, 0.9f, false);
+            SoundCategory.PLAYERS, 1.2f, 0.8f, false);
+        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_WITHER_SKELETON_DEATH,
+            SoundCategory.PLAYERS, 0.9f, 1.2f, false);
+        if (headShears.size() >= 6) headShears.remove(0);
+        headShears.add(new HeadShear(world, System.currentTimeMillis() + 220L));
     }
 
     // ===== Effects =====
