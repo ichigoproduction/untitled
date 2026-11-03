@@ -73,11 +73,13 @@ public final class AutoUpdater {
                 String hash = o.get("sha256").getAsString().toLowerCase(java.util.Locale.ROOT);
                 URI uri = URI.create(o.get("download").getAsString());
                 long size = o.get("size").getAsLong();
+                String signature = o.get("signature").getAsString();
                 if (!version.matches("[0-9]+(\\.[0-9]+){1,3}") || !minecraft.equals("1.21.4")
                     || !hash.matches("[0-9a-f]{64}") || size < 1 || size > LIMIT
                     || !uri.getScheme().equals("https") || !HOST.equals(uri.getHost())
                     || uri.getRawQuery() != null || !uri.getPath().equals("/downloads/152-" + version + ".jar"))
                     throw new IllegalArgumentException("Untrusted update metadata");
+                UpdateSignature.verify(version, minecraft, uri.toASCIIString(), hash, size, signature);
                 if (compare(version, currentVersion()) > 0) {
                     release = new Release(version,minecraft,uri,hash,size);
                     ui("Version " + version + " available - approval required");
@@ -85,7 +87,10 @@ public final class AutoUpdater {
                     release = null;
                     ui("Up to date (" + currentVersion() + ")");
                 }
-            } catch (Exception e) { ui("Update check failed: " + e.getClass().getSimpleName()); }
+            } catch (Exception e) {
+                release = null;
+                ui(e instanceof SecurityException ? "Update signature rejected" : "Update check failed: " + e.getClass().getSimpleName());
+            }
             finally { busy = false; }
         });
     }
