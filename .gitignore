@@ -7,3 +7,8 @@ run/
 # IntelliJ IDEA local project files
 .idea/
 *.iml
+
+# Never commit signing secrets
+*.pem
+*.key
+.152-signing/
