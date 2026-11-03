@@ -12,6 +12,7 @@ public class UntitledClient implements ClientModInitializer {
     public void onInitializeClient() {
         LOGGER.info("untitled client initialization started");
         EditHud.register();
+        AutoUpdater.check();
         // Wait until the chat screen has finished closing after command execution.
         net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (hudScreenDelay < 0) return;
