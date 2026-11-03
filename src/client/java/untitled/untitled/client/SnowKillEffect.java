@@ -1,7 +1,9 @@
 package untitled.untitled.client;
 
-import net.minecraft.block.Blocks;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.registry.entry.RegistryEntry;
+import net.minecraft.sound.SoundEvent;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.nbt.NbtCompound;
@@ -69,7 +71,7 @@ public final class SnowKillEffect {
         if (world == null || killedPlayerPos == null) return;
         Vec3d origin = killedPlayerPos.add(0, 1.05, 0);
         world.playSound(origin.x, origin.y, origin.z,
-                SoundEvents.ENTITY_SNOWBALL_THROW, SoundCategory.PLAYERS, 0.9f, 0.90f, false);
+                resolveSound(SoundEvents.ENTITY_SNOWBALL_THROW), SoundCategory.PLAYERS, 0.9f, 0.90f, false);
 
         for (int i = 0; i < SNOWBALLS_PER_BURST; i++) {
             if (BALLS.size() >= MAX_SNOWBALLS) BALLS.remove(0);
@@ -97,7 +99,7 @@ public final class SnowKillEffect {
             Vec3d next = ball.pos.add(ball.velocity);
             BlockHitResult hit = currentWorld.raycast(new RaycastContext(
                     ball.pos, next, RaycastContext.ShapeType.COLLIDER,
-                    RaycastContext.FluidHandling.NONE, null));
+                    RaycastContext.FluidHandling.NONE, MinecraftClient.getInstance().player));
 
             if (hit.getType() == HitResult.Type.BLOCK) {
                 if (hit.getSide() == Direction.UP) {
@@ -176,7 +178,7 @@ public final class SnowKillEffect {
         // Avoid playing dozens of loud overlapping sounds.
         if (RANDOM.nextInt(7) == 0) {
             world.playSound(hitPos.x, hitPos.y, hitPos.z,
-                    SoundEvents.BLOCK_SNOW_HIT, SoundCategory.PLAYERS, 0.25f, 1.10f, false);
+                    resolveSound(SoundEvents.BLOCK_SNOW_HIT), SoundCategory.PLAYERS, 0.25f, 1.10f, false);
         }
     }
 
@@ -185,4 +187,10 @@ public final class SnowKillEffect {
         for (float value : values) list.add(NbtFloat.of(value));
         return list;
     }
+    private static SoundEvent resolveSound(Object sound) {
+        if (sound instanceof SoundEvent event) return event;
+        if (sound instanceof RegistryEntry<?> entry && entry.value() instanceof SoundEvent event) return event;
+        throw new IllegalArgumentException("Unknown sound event type: " + sound);
+    }
+
 }
