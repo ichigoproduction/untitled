@@ -17,8 +17,18 @@ public final class UpdateInstaller {
         if (!newName.matches("152-[0-9]+(\\.[0-9]+){1,3}\\.jar")
             || !original.getFileName().toString().endsWith(".jar")
             || !Files.isRegularFile(original) || !Files.isRegularFile(staged)) return;
-        // Never install outside the game's standard mods directory.
-        if (!original.getParent().getFileName().toString().equals("mods")) return;
+        // Only allow a standard mods folder or Lunar Client's versioned Fabric mods folder.
+        Path parent = original.getParent();
+        String folder = parent.getFileName().toString();
+        boolean standard = folder.equals("mods");
+        boolean lunar = folder.equals("fabric-1.21.4")
+            && parent.getParent() != null
+            && parent.getParent().getFileName().toString().equals("mods")
+            && original.toString().contains(".lunarclient");
+        if (!standard && !lunar) {
+            System.err.println("Unsupported mod directory: " + parent);
+            return;
+        }
 
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false)) {
