@@ -44,7 +44,7 @@ public final class AutoUpdateScreen extends Screen {
         if (manualCheck) {
             if (AutoUpdater.isBusy() && status.startsWith("Checking")) {
                 checkLabel = "Checking...";
-            } else if (status.startsWith("Update check failed")) {
+            } else if ((status.startsWith("Update check failed") || status.startsWith("Update signature rejected"))) {
                 checkLabel = "Check Failed - Retry";
             } else if (AutoUpdater.hasUpdate()) {
                 checkLabel = "Available: v" + AutoUpdater.availableVersion();
