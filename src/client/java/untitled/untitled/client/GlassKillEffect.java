@@ -1,6 +1,5 @@
 package untitled.untitled.client;
 
-import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.EntityType;
@@ -8,7 +7,10 @@ import net.minecraft.entity.decoration.DisplayEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtFloat;
 import net.minecraft.nbt.NbtList;
-import net.minecraft.particle.BlockStateParticleEffect;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.particle.ItemStackParticleEffect;
+import net.minecraft.particle.DustParticleEffect;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.registry.entry.RegistryEntry;
 import net.minecraft.sound.SoundCategory;
@@ -37,8 +39,15 @@ public final class GlassKillEffect {
     private static final long TILE_LIFETIME_MS = 1850L;
     private static final double GRAVITY = 0.035;
     private static final Random RANDOM = new Random();
-    private static final BlockStateParticleEffect GLASS_SHARD =
-            new BlockStateParticleEffect(ParticleTypes.BLOCK, Blocks.GLASS.getDefaultState());
+    // Glass blocks have mostly transparent textures: their BLOCK particles can be invisible.
+    // The stained glass pane item sprite has clear edges, backed by opaque dust glints.
+    private static final ItemStackParticleEffect GLASS_SHARD =
+            new ItemStackParticleEffect(ParticleTypes.ITEM,
+                    new ItemStack(Items.LIGHT_BLUE_STAINED_GLASS_PANE));
+    private static final DustParticleEffect GLASS_GLINT =
+            new DustParticleEffect(0xC9F6FF, 1.15f);
+    private static final DustParticleEffect GLASS_EDGE =
+            new DustParticleEffect(0x64CFF6, 0.95f);
     private static final String[] GLASS_BLOCKS = {
             "minecraft:glass",
             "minecraft:light_blue_stained_glass",
@@ -68,11 +77,17 @@ public final class GlassKillEffect {
         final ClientWorld world;
         final DisplayEntity.BlockDisplayEntity display;
         final long expiresAt;
+        final Vec3d contact;
+        final double side;
+        int visualTick;
 
-        GlassTile(ClientWorld world, DisplayEntity.BlockDisplayEntity display, long expiresAt) {
+        GlassTile(ClientWorld world, DisplayEntity.BlockDisplayEntity display,
+                  long expiresAt, Vec3d contact, double side) {
             this.world = world;
             this.display = display;
             this.expiresAt = expiresAt;
+            this.contact = contact;
+            this.side = side;
         }
     }
 
@@ -124,6 +139,9 @@ public final class GlassKillEffect {
                             0.03 + RANDOM.nextDouble() * 0.05,
                             (RANDOM.nextDouble() - 0.5) * 0.12);
                 }
+                // Visible glitter even when transparent item pixels are tiny.
+                world.addParticle(GLASS_GLINT, contact.x, contact.y + 0.08, contact.z,
+                        0.0, 0.018, 0.0);
                 shardIterator.remove();
                 continue;
             }
@@ -133,6 +151,17 @@ public final class GlassKillEffect {
             world.addParticle(GLASS_SHARD,
                     nextPosition.x, nextPosition.y, nextPosition.z,
                     0.0, 0.0, 0.0);
+            // A pale blue-white sparkle tracks each fast-moving shard.
+            if (RANDOM.nextBoolean()) {
+                world.addParticle(RANDOM.nextBoolean() ? GLASS_GLINT : GLASS_EDGE,
+                        nextPosition.x, nextPosition.y, nextPosition.z,
+                        0.0, 0.008, 0.0);
+            }
+            if (RANDOM.nextInt(9) == 0) {
+                world.addParticle(ParticleTypes.END_ROD,
+                        nextPosition.x, nextPosition.y, nextPosition.z,
+                        0.0, 0.0, 0.0);
+            }
         }
 
         Iterator<GlassTile> tileIterator = TILES.iterator();
@@ -141,6 +170,10 @@ public final class GlassKillEffect {
             if (tile.world != world || nowMs >= tile.expiresAt || tile.display.isRemoved()) {
                 if (!tile.display.isRemoved()) tile.display.discard();
                 tileIterator.remove();
+            } else if (tile.visualTick++ % 5 == 0) {
+                // The translucent display has almost no opaque pixels;
+                // draw faint cyan edges so scattered glass is actually visible.
+                drawTileGlints(world, tile);
             }
         }
     }
@@ -178,12 +211,30 @@ public final class GlassKillEffect {
                 hitPosition.y + 0.015,
                 hitPosition.z - side / 2.0);
         world.addEntity(tile);
-        TILES.add(new GlassTile(world, tile, nowMs + TILE_LIFETIME_MS));
+        TILES.add(new GlassTile(world, tile, nowMs + TILE_LIFETIME_MS, hitPosition, side));
 
         if (RANDOM.nextInt(8) == 0) {
             world.playSound(hitPosition.x, hitPosition.y, hitPosition.z,
                     resolveSound(SoundEvents.BLOCK_GLASS_HIT),
                     SoundCategory.PLAYERS, 0.20f, 1.40f, false);
+        }
+    }
+
+    private static void drawTileGlints(ClientWorld world, GlassTile tile) {
+        double half = tile.side * 0.5;
+        double y = tile.contact.y + 0.038;
+        // Corners and edge midpoints of a thin glass tile.
+        for (int i = 0; i < 8; i++) {
+            double angle = i * Math.PI / 4.0;
+            // Square perimeter, not a circular patch.
+            double dx = Math.cos(angle);
+            double dz = Math.sin(angle);
+            double norm = Math.max(Math.abs(dx), Math.abs(dz));
+            world.addParticle((i & 1) == 0 ? GLASS_GLINT : GLASS_EDGE,
+                    tile.contact.x + half * dx / norm,
+                    y,
+                    tile.contact.z + half * dz / norm,
+                    0.0, 0.0, 0.0);
         }
     }
 
