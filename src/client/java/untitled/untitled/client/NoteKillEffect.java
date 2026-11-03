@@ -20,10 +20,10 @@ import java.util.Random;
  */
 public final class NoteKillEffect {
     private static final long DURATION_MS = 5000L;
-    private static final long SECOND_PHRASE_MS = 2300L;
-    private static final long NOTE_INTERVAL_MS = 115L;
+    private static final long SECOND_PHRASE_MS = 2000L;
+    private static final long NOTE_INTERVAL_MS = 108L;
     private static final int MAX_ACTIVE = 2;
-    private static final float[] PITCHES = {0.77f, 0.89f, 1.0f, 1.12f, 1.26f, 1.50f, 1.78f};
+    private static final float[] PITCHES = {1.12f, 1.26f, 1.41f, 1.59f, 1.78f, 1.89f, 2.00f};
     private static final Random RANDOM = new Random();
     private static final List<NoteBurst> ACTIVE = new ArrayList<>();
 
@@ -81,15 +81,15 @@ public final class NoteKillEffect {
                     long due = start + note * NOTE_INTERVAL_MS;
                     if (!burst.played[phrase][note] && age >= due) {
                         burst.played[phrase][note] = true;
-                        // Repeated, quickly rising notes with a slightly longer ringing finish.
+                        // Sparkly, rising bell notes in a brighter register, repeated twice.
                         world.playSound(mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
-                                resolveSound(SoundEvents.BLOCK_NOTE_BLOCK_PLING), SoundCategory.PLAYERS,
-                                note == PITCHES.length - 1 ? 1.0f : 0.65f,
+                                resolveSound(SoundEvents.BLOCK_NOTE_BLOCK_BELL), SoundCategory.PLAYERS,
+                                note == PITCHES.length - 1 ? 0.88f : 0.55f,
                                 PITCHES[note], false);
                         if (note == PITCHES.length - 1) {
                             world.playSound(mc.player.getX(), mc.player.getY() + 1.3, mc.player.getZ(),
                                     resolveSound(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME), SoundCategory.PLAYERS,
-                                    0.40f, 1.50f, false);
+                                    0.28f, 1.68f, false);
                         }
                     }
                 }
