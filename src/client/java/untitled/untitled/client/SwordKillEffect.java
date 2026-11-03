@@ -1,5 +1,7 @@
 package untitled.untitled.client;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.particle.DustParticleEffect;
 import net.minecraft.particle.ParticleTypes;
@@ -51,6 +53,13 @@ public final class SwordKillEffect {
         if (ACTIVE.size() >= MAX_ACTIVE) ACTIVE.remove(0);
         SwordDrop drop = new SwordDrop(world, position, nowMs);
         ACTIVE.add(drop);
+        // Start the Loyalty return whoosh before the anvil impact, so the
+        // short signature sound cannot be masked by three simultaneous hits.
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc != null && mc.world == world) {
+            mc.getSoundManager().play(PositionedSoundInstance.master(
+                    resolveSound(SoundEvents.ITEM_TRIDENT_RETURN), 1.0f, 1.20f));
+        }
         renderSword(world, drop, 3.1);
     }
 
@@ -121,9 +130,7 @@ public final class SwordKillEffect {
     }
 
     private static void impact(ClientWorld world, Vec3d pos) {
-        // Trident Loyalty return whoosh layered under the anvil impact.
-        world.playSound(pos.x, pos.y, pos.z, resolveSound(SoundEvents.ITEM_TRIDENT_RETURN),
-            SoundCategory.PLAYERS, 0.95f, 1.08f, false);
+        // The Trident Loyalty sound was played at the beginning of the drop.
         // Deep anvil clang, followed by a quiet metallic shimmer and ground sparks.
         world.playSound(pos.x, pos.y, pos.z, SoundEvents.BLOCK_ANVIL_LAND,
             SoundCategory.PLAYERS, 1.3f, 1.07f, false);
