@@ -112,7 +112,7 @@ public final class KillEffect {
     private static int glitchSeq = 1;
 
     private enum EffectType {
-        THUNDER, TOTEM, SOUL, EXPLOSION, WING, POTION, ROSE, FIREWORK, HEAD;
+        THUNDER, TOTEM, SOUL, EXPLOSION, WING, POTION, ROSE, FIREWORK, HEAD, SWORD;
         static EffectType parse(String s) {
             if (s == null) return null;
             String q = s.trim().toLowerCase(java.util.Locale.ROOT);
@@ -320,6 +320,7 @@ public final class KillEffect {
         tickPotionDrops(world, nowMs);
         tickFireworks(world, nowMs);
         tickHeadDrops(world, nowMs);
+        SwordKillEffect.tick(world, nowMs);
 
         if (tracks.isEmpty()) return;
 
@@ -469,6 +470,7 @@ public final class KillEffect {
         else if (type == EffectType.ROSE) spawnCherryRose(world, pos);
         else if (type == EffectType.FIREWORK) fireworkBursts.add(new FireworkBurst(pos, nowMs));
         else if (type == EffectType.HEAD) spawnHead(world, pos, playerId, playerName);
+        else if (type == EffectType.SWORD) SwordKillEffect.spawn(world, pos, nowMs);
     }
 
     private static void spawnEnder(ClientWorld world, Vec3d pos) {
