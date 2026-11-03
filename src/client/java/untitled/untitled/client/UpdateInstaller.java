@@ -47,7 +47,7 @@ public final class UpdateInstaller {
         boolean backedUp = false;
         try {
             Files.copy(staged, local, StandardCopyOption.REPLACE_EXISTING);
-            // Keep previous version in a non-.jar backup to prevent Fabric loading both.
+            // Keep a temporary non-.jar backup for rollback during the install.
             moveWhenUnlocked(original, backup);
             backedUp = true;
             try {
@@ -63,9 +63,17 @@ public final class UpdateInstaller {
                 throw installError;
             }
             Files.deleteIfExists(staged);
+            // The update is installed; do not retain a permanent backup in mods.
+            try {
+                Files.deleteIfExists(backup);
+                backedUp = false;
+                System.out.println("Update installed; temporary backup removed: " + destination);
+            } catch (IOException cleanupError) {
+                System.err.println("Update installed, but could not remove temporary backup: " + cleanupError);
+            }
         } finally {
             Files.deleteIfExists(local);
-            // On success keep the backup; on failure keep it if restoration was impossible.
+            // If installation failed and rollback could not complete, preserve the backup for recovery.
             if (backedUp && !Files.exists(destination)) {
                 try {
                     if (!Files.exists(original)) Files.move(backup, original);
