@@ -1,7 +1,6 @@
 package untitled.untitled.client;
 
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.sound.PositionedSoundInstance;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.particle.DustParticleEffect;
 import net.minecraft.particle.ParticleTypes;
@@ -57,8 +56,7 @@ public final class SwordKillEffect {
         // short signature sound cannot be masked by three simultaneous hits.
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc != null && mc.world == world) {
-            mc.getSoundManager().play(PositionedSoundInstance.master(
-                    resolveSound(SoundEvents.ITEM_TRIDENT_RETURN), 1.0f, 1.20f));
+            KillEffectSounds.playMaster(SoundEvents.ITEM_TRIDENT_RETURN, 1.20f, 1.0f);
         }
         renderSword(world, drop, 3.1);
     }
@@ -132,11 +130,11 @@ public final class SwordKillEffect {
     private static void impact(ClientWorld world, Vec3d pos) {
         // The Trident Loyalty sound was played at the beginning of the drop.
         // Deep anvil clang, followed by a quiet metallic shimmer and ground sparks.
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.BLOCK_ANVIL_LAND,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z, SoundEvents.BLOCK_ANVIL_LAND,
             SoundCategory.PLAYERS, 1.3f, 1.07f, false);
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME,
             SoundCategory.PLAYERS, 0.65f, 0.78f, false);
-        world.playSound(pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
+        KillEffectSounds.play(world,pos.x, pos.y, pos.z, SoundEvents.ENTITY_PLAYER_ATTACK_CRIT,
             SoundCategory.PLAYERS, 0.65f, 0.85f, false);
 
         for (int i = 0; i < 36; i++) {
