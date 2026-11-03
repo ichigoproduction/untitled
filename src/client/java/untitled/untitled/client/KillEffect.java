@@ -228,7 +228,7 @@ public final class KillEffect {
     public static boolean settingsEnabled() { return enabled; }
     public static int settingsSoundVolume() { return soundVolume; }
     public static void settingsSetSoundVolume(int percent) {
-        int clamped = MathHelper.clamp(percent, 0, 200);
+        int clamped = MathHelper.clamp(percent, 0, 300);
         if (clamped == soundVolume) return;
         soundVolume = clamped;
         saveConfig();
@@ -1539,7 +1539,7 @@ public final class KillEffect {
                     if (parsed != null) effect = parsed;
                 }
                 if (obj.has("soundVolume")) {
-                    soundVolume = MathHelper.clamp(obj.get("soundVolume").getAsInt(), 0, 200);
+                    soundVolume = MathHelper.clamp(obj.get("soundVolume").getAsInt(), 0, 300);
                 }
             }
         } catch (Throwable ignored) {}
