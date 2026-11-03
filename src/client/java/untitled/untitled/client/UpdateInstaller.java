@@ -3,41 +3,62 @@ package untitled.untitled.client;
 import java.nio.file.*;
 import java.util.concurrent.TimeUnit;
 
-/** Separate JVM; executes only after Minecraft exits and the original JAR is released. */
+/** Separate JVM; installs a version-named JAR only after Minecraft exits. */
 public final class UpdateInstaller {
     private UpdateInstaller() {}
+
     public static void main(String[] args) throws Exception {
         if (args.length != 3) return;
         long pid = Long.parseLong(args[0]);
         Path original = Path.of(args[1]).toAbsolutePath().normalize();
         Path staged = Path.of(args[2]).toAbsolutePath().normalize();
-        if (!original.getFileName().toString().endsWith(".jar")
-                || !staged.getFileName().toString().endsWith(".jar")
-                || !Files.isRegularFile(original) || !Files.isRegularFile(staged)) return;
-        // Avoid replacing a mod outside its original mods directory.
+        String newName = staged.getFileName().toString();
+
+        if (!newName.matches("152-[0-9]+(\\.[0-9]+){1,3}\\.jar")
+            || !original.getFileName().toString().endsWith(".jar")
+            || !Files.isRegularFile(original) || !Files.isRegularFile(staged)) return;
+        // Never install outside the game's standard mods directory.
         if (!original.getParent().getFileName().toString().equals("mods")) return;
-        long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
         while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false)) {
-            if (System.nanoTime() > end) return;
+            if (System.nanoTime() > deadline) return;
             Thread.sleep(500);
         }
+
+        Path destination = original.resolveSibling(newName);
+        if (!destination.equals(original) && Files.exists(destination)) {
+            throw new FileAlreadyExistsException("Refusing to overwrite existing update: " + destination);
+        }
         Path backup = original.resolveSibling(original.getFileName() + ".152-backup-" + System.currentTimeMillis());
-        Files.copy(original, backup);
+        Path local = Files.createTempFile(original.getParent(), ".152-update-", ".tmp");
+        boolean backedUp = false;
         try {
-            // Stage alongside the target so the final replacement is on the same filesystem.
-            Path local = Files.createTempFile(original.getParent(), ".152-update-", ".jar");
+            Files.copy(staged, local, StandardCopyOption.REPLACE_EXISTING);
+            // Keep previous version in a non-.jar backup to prevent Fabric loading both.
+            Files.move(original, backup);
+            backedUp = true;
             try {
-                Files.copy(staged, local, StandardCopyOption.REPLACE_EXISTING);
                 try {
-                    Files.move(local, original, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                    Files.move(local, destination, StandardCopyOption.ATOMIC_MOVE);
                 } catch (AtomicMoveNotSupportedException e) {
-                    Files.move(local, original, StandardCopyOption.REPLACE_EXISTING);
+                    Files.move(local, destination);
                 }
-            } finally { Files.deleteIfExists(local); }
+            } catch (Exception installError) {
+                // Restore the old JAR and its original filename on failure.
+                Files.move(backup, original);
+                backedUp = false;
+                throw installError;
+            }
             Files.deleteIfExists(staged);
-        } catch (Exception failure) {
-            Files.copy(backup, original, StandardCopyOption.REPLACE_EXISTING);
-            throw failure;
+        } finally {
+            Files.deleteIfExists(local);
+            // On success keep the backup; on failure keep it if restoration was impossible.
+            if (backedUp && !Files.exists(destination)) {
+                try {
+                    if (!Files.exists(original)) Files.move(backup, original);
+                } catch (Exception ignored) { }
+            }
         }
     }
 }
