@@ -102,7 +102,6 @@ public final class KillEffect {
     private static final DustParticleEffect ROSE_RED = new DustParticleEffect(0xC71952, 0.95f);
     private static final DustParticleEffect ROSE_GLOW = new DustParticleEffect(0xFFD6EA, 0.85f);
     private static final int ROSE_PARTICLES = 72;
-    private static final int ROSE_RING_PARTICLES = 36;
     private static final int ROSE_FALLING_PETALS = 24;
 
     // ===== Soul / glitch tuning =====
@@ -812,28 +811,6 @@ public final class KillEffect {
             else p = (i % 2 == 0) ? ROSE_PINK : ROSE_RED;
 
             world.addParticle(p, px, py, pz, vx, vy, vz);
-        }
-
-        // Double ground bloom: an inner bright ring and a wider alternating
-        // pink/red ring give the effect a clear flower-shaped footprint.
-        for (int ring = 0; ring < 2; ring++) {
-            double radius = (ring == 0) ? 0.52 : 0.92;
-            int count = (ring == 0) ? ROSE_RING_PARTICLES / 2 : ROSE_RING_PARTICLES;
-            for (int i = 0; i < count; i++) {
-                double a = Math.PI * 2.0 * i / count + ring * 0.08;
-                ParticleEffect p = (ring == 0)
-                        ? ROSE_GLOW
-                        : ((i % 2 == 0) ? ROSE_PINK : ROSE_RED);
-                world.addParticle(
-                        p,
-                        x + Math.cos(a) * radius,
-                        pos.y + 0.10 + Math.random() * 0.05,
-                        z + Math.sin(a) * radius,
-                        Math.cos(a) * 0.012,
-                        0.015 + Math.random() * 0.018,
-                        Math.sin(a) * 0.012
-                );
-            }
         }
 
         // Petal rain above the victim keeps the finish visible for a little
