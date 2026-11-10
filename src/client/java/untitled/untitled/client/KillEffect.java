@@ -832,6 +832,8 @@ public final class KillEffect {
             );
         }
 
+        // Match the standalone killeffect Rose's original sounds and playback exactly.
+        // This deliberately bypasses the 152 kill effect Volume slider for Rose.
         // Layer a soft leaf sound with a higher crystalline chime. The first
         // reads as petals bursting outward; the second provides a clean kill cue.
         SoundEvent petals = soundOfByIdFallback(
@@ -839,7 +841,7 @@ public final class KillEffect {
                 SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME
         );
         if (petals != null) {
-            KillEffectSounds.play(world,x, y, z, petals, SoundCategory.PLAYERS, 1.15f, 1.08f, false);
+            world.playSound(x, y, z, petals, SoundCategory.PLAYERS, 1.15f, 1.08f, false);
         }
 
         SoundEvent chime = soundOfByIdFallback(
@@ -847,7 +849,7 @@ public final class KillEffect {
                 SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME
         );
         if (chime != null) {
-            KillEffectSounds.play(world,x, y, z, chime, SoundCategory.PLAYERS, 1.05f, 1.48f, false);
+            world.playSound(x, y, z, chime, SoundCategory.PLAYERS, 1.05f, 1.48f, false);
         }
     }
 
